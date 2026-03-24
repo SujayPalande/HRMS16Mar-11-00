@@ -1,0 +1,763 @@
+import { cn } from "@/lib/utils";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Download, Printer, FileSpreadsheet, FileText, Upload, Building2, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AppLayout } from "@/components/layout/app-layout";
+import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { motion } from "framer-motion";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Department, Unit, User } from "@shared/schema";
+import { addCompanyHeader, addWatermark, addFooter } from "@/lib/pdf-utils";
+
+interface Employee {
+  id: number;
+  firstName: string;
+  lastName: string;
+  employeeId: string;
+  position: string;
+  departmentId: number;
+  dateOfBirth?: string;
+  gender?: string;
+  joinDate?: string;
+  basicSalary?: number;
+  hra?: number;
+  salary?: number;
+}
+
+interface Attendance {
+  id: number;
+  userId: number;
+  date: string;
+  checkIn?: string;
+  checkOut?: string;
+  status: string;
+  hoursWorked?: number;
+}
+
+interface PayrollRecord {
+  id: number;
+  userId: number;
+  month: number;
+  year: number;
+  basicSalary: number;
+  hra?: number;
+  allowances?: number;
+  deductions?: number;
+  pfContribution?: number;
+  esiContribution?: number;
+  netSalary: number;
+  status: string;
+}
+
+export default function MusterRollPage() {
+  const currentDate = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("all");
+  const [establishmentName, setEstablishmentName] = useState("ASN HR Consultancy & Services");
+  const [employerName, setEmployerName] = useState("ASN HR Consultancy");
+  const [viewType, setViewType] = useState<"muster" | "wage">("muster");
+
+  const { data: employees = [] } = useQuery<Employee[]>({
+    queryKey: ["/api/employees"],
+  });
+
+  const { data: departments = [] } = useQuery<Department[]>({ queryKey: ["/api/departments"] });
+  const { data: units = [] } = useQuery<Unit[]>({ queryKey: ["/api/masters/units"] });
+
+  const hierarchicalData = useMemo(() => {
+    const data = employees.filter(emp => {
+      const dept = departments.find(d => d.id === emp.departmentId);
+      const unit = units.find(u => u.id === dept?.unitId);
+      
+      const matchesUnit = selectedUnit === "all" || unit?.id.toString() === selectedUnit;
+      const matchesDept = selectedDepartment === "all" || dept?.id.toString() === selectedDepartment;
+      
+      return matchesUnit && matchesDept;
+    }).map(emp => {
+      const dept = departments.find(d => d.id === emp.departmentId);
+      const unit = units.find(u => u.id === dept?.unitId);
+      return {
+        ...emp,
+        departmentName: dept?.name || "Unassigned",
+        unitName: unit?.name || "Unassigned"
+      };
+    });
+
+    const hierarchical: Record<string, Record<string, typeof data>> = {};
+    data.forEach(item => {
+      if (!hierarchical[item.unitName]) hierarchical[item.unitName] = {};
+      if (!hierarchical[item.unitName][item.departmentName]) hierarchical[item.unitName][item.departmentName] = [];
+      hierarchical[item.unitName][item.departmentName].push(item);
+    });
+    return hierarchical;
+  }, [employees, departments, units, selectedUnit, selectedDepartment]);
+
+  const { data: attendanceRecords = [] } = useQuery<Attendance[]>({
+    queryKey: ["/api/attendance"],
+  });
+
+  const { data: payrollRecords = [] } = useQuery<PayrollRecord[]>({
+    queryKey: ["/api/payroll"],
+  });
+
+  const getPayrollForEmployee = (employeeId: number): PayrollRecord | undefined => {
+    return payrollRecords.find(
+      p => p.userId === employeeId && p.month === selectedMonth && p.year === selectedYear
+    );
+  };
+
+  const months = [
+    { value: 1, label: "January" }, { value: 2, label: "February" }, { value: 3, label: "March" },
+    { value: 4, label: "April" }, { value: 5, label: "May" }, { value: 6, label: "June" },
+    { value: 7, label: "July" }, { value: 8, label: "August" }, { value: 9, label: "September" },
+    { value: 10, label: "October" }, { value: 11, label: "November" }, { value: 12, label: "December" }
+  ];
+
+  const years = Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 4 + i);
+
+  const getDaysInMonth = (month: number, year: number) => new Date(year, month, 0).getDate();
+  const daysInMonth = getDaysInMonth(selectedMonth, selectedYear);
+
+  const getAttendanceForDay = (employeeId: number, day: number): string => {
+    const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const record = attendanceRecords.find(
+      (a) => {
+        const recordDate = new Date(a.date);
+        const recordDateStr = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, '0')}-${String(recordDate.getDate()).padStart(2, '0')}`;
+        return a.userId === employeeId && recordDateStr === dateStr;
+      }
+    );
+    if (!record) return "-";
+    switch (record.status) {
+      case "present": return "P";
+      case "absent": return "A";
+      case "half-day": return "H";
+      case "leave": return "L";
+      case "holiday": return "HO";
+      case "weekly-off": return "WO";
+      default: return "-";
+    }
+  };
+
+  const getHoursWorkedForDay = (employeeId: number, day: number): number => {
+    const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const record = attendanceRecords.find(
+      (a) => {
+        const recordDate = new Date(a.date);
+        const recordDateStr = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, '0')}-${String(recordDate.getDate()).padStart(2, '0')}`;
+        return a.userId === employeeId && recordDateStr === dateStr;
+      }
+    );
+    return record?.hoursWorked || 0;
+  };
+
+  const calculateEmployeeData = (employee: Employee) => {
+    let totalDaysWorked_raw = 0;
+    let totalHoursWorked_raw = 0;
+    let overtimeHours_raw = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const status = getAttendanceForDay(employee.id, day);
+      if (status === "P") {
+        totalDaysWorked_raw++;
+        const hours = getHoursWorkedForDay(employee.id, day);
+        totalHoursWorked_raw += hours;
+        if (hours > 8) overtimeHours_raw += hours - 8;
+      } else if (status === "H") {
+        totalDaysWorked_raw += 0.5;
+        totalHoursWorked_raw += 4;
+      }
+    }
+
+    const payrollData = getPayrollForEmployee(employee.id);
+    const totalDaysInMonth = daysInMonth;
+    const totalDaysWorked = Number(totalDaysWorked_raw.toFixed(1));
+    const totalHoursWorked = totalHoursWorked_raw;
+    const overtimeHours = overtimeHours_raw;
+
+    const basicSalary = employee.basicSalary || 0;
+    const hra = employee.hra || 0;
+    const proRatedBasic = Math.round((basicSalary / totalDaysInMonth) * totalDaysWorked);
+    const proRatedHra = Math.round((hra / totalDaysInMonth) * totalDaysWorked);
+    
+    // Fallback to salary if basicSalary is not set
+    const effectiveSalary = employee.salary || 0;
+    const finalBasic = proRatedBasic || Math.round((effectiveSalary * 0.5 / totalDaysInMonth) * totalDaysWorked);
+    const finalHra = proRatedHra || Math.round((effectiveSalary * 0.25 / totalDaysInMonth) * totalDaysWorked);
+
+    const dailyRate = (basicSalary || effectiveSalary) / 26;
+    const hourlyRate = dailyRate / 8;
+    
+    // Additional components from payslip
+    const da = Math.round(finalBasic * 0.05); // Mocked Dearness Allowance
+    const conveyance = 1600; // Mocked Conveyance
+    const medical = 1250; // Mocked Medical
+    const special = 2500; // Mocked Special Allowance
+    const bonusIncentive = 0; // Bonus/Incentives
+    const overtimePayable = Math.round(totalHoursWorked > 0 ? (overtimeHours * hourlyRate * 2) : 0);
+    
+    const grossEarnings = finalBasic + finalHra + da + conveyance + medical + special + bonusIncentive + overtimePayable;
+    
+    // Deductions
+    const pfDeduction = payrollData?.pfContribution || Math.round(finalBasic * 0.12);
+    const esiDeduction = payrollData?.esiContribution || (grossEarnings <= 21000 ? Math.round(grossEarnings * 0.0075) : 0);
+    const ptDeduction = grossEarnings >= 10000 ? 200 : 0;
+    const itTds = 0; // Income Tax
+    const mlwf = ([6, 12].includes(selectedMonth)) ? 25 : 0; // Half-yearly June/December
+    const loanRecovery = 0;
+    const otherDeductions = payrollData?.deductions || 0;
+    
+    const totalDeductions = pfDeduction + esiDeduction + ptDeduction + itTds + mlwf + loanRecovery + otherDeductions;
+    const netWages = Math.max(0, grossEarnings - totalDeductions);
+
+    return {
+      totalDaysWorked,
+      totalHoursWorked,
+      overtimeHours,
+      dailyRate: Math.round(dailyRate),
+      basicSalary: finalBasic,
+      da,
+      hra: finalHra,
+      conveyance,
+      medical,
+      special,
+      bonusIncentive,
+      overtimePayable,
+      grossEarnings,
+      pfDeduction,
+      esiDeduction,
+      ptDeduction,
+      itTds,
+      mlwf,
+      loanRecovery,
+      otherDeductions,
+      totalDeductions,
+      netWages
+    };
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as any;
+    const monthName = months.find(m => m.value === selectedMonth)?.label || "";
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    addWatermark(doc);
+    addCompanyHeader(doc, { 
+      title: viewType === "muster" ? "Form II - Muster Roll" : "Form II - Wage Register",
+      subtitle: `[See Rule 27(1)]`
+    });
+    
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Establishment: ${establishmentName}`, 14, 65);
+    doc.text(`Employer: ${employerName}`, 14, 70);
+    doc.text(`Month: ${monthName} ${selectedYear}`, pageWidth - 60, 65);
+
+    const dayColumns = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+    const header = [
+      "Sl No", "Employee Name", "Designation",
+      ...dayColumns,
+      viewType === "muster" ? "Total Days" : "Days"
+    ];
+    
+    if (viewType === "wage") {
+      header.push(
+        "Basic", "Dearness Allowance", "House Rent Allowance", "Conveyance", "Medical", "Special Allowance", "Bonus/Incentive", "Overtime", "Gross Earnings",
+        "Provident Fund", "Employee State Insurance", "Professional Tax", "Tax Deducted at Source", "MLWF", "Salary Advance / Loan", "Other Deductions", "Total Deductions", "Net Salary"
+      );
+    }
+
+    const body = Object.values(hierarchicalData).flatMap(depts => Object.values(depts).flat()).map((emp, index) => {
+      const data = calculateEmployeeData(emp);
+      const row: any[] = [
+        index + 1,
+        `${emp.firstName} ${emp.lastName}`,
+        emp.position || "Worker",
+      ];
+      
+      // Add daily attendance
+      for (let day = 1; day <= daysInMonth; day++) {
+        row.push(getAttendanceForDay(emp.id, day));
+      }
+      
+      row.push(data.totalDaysWorked);
+      
+      if (viewType === "wage") {
+        row.push(
+          data.basicSalary,
+          data.da,
+          data.hra,
+          data.conveyance,
+          data.medical,
+          data.special,
+          data.bonusIncentive,
+          data.overtimePayable,
+          data.grossEarnings,
+          data.pfDeduction,
+          data.esiDeduction,
+          data.ptDeduction,
+          data.itTds,
+          data.mlwf,
+          data.loanRecovery,
+          data.otherDeductions,
+          data.totalDeductions,
+          data.netWages
+        );
+      }
+      return row;
+    });
+
+    autoTable(doc, {
+      startY: 75,
+      head: [header],
+      body: body,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 5, lineWidth: 0.1, lineColor: [0, 0, 0] },
+      styles: { fontSize: 5, cellPadding: 1 },
+      margin: { left: 5, right: 5 }
+    });
+
+    addFooter(doc);
+    doc.save(`${viewType}_report_${monthName}_${selectedYear}.pdf`);
+  };
+
+  const exportToExcel = () => {
+    const flatData = Object.values(hierarchicalData).flatMap(depts => Object.values(depts).flat()).map((emp, index) => {
+      const data = calculateEmployeeData(emp);
+      return {
+        "Sl No": index + 1,
+        "Employee Name": `${emp.firstName} ${emp.lastName}`,
+        "Designation": emp.position || "Worker",
+        "Days Worked": data.totalDaysWorked,
+        "Basic Salary": data.basicSalary,
+        "Dearness Allowance": data.da,
+        "House Rent Allowance": data.hra,
+        "Conveyance": data.conveyance,
+        "Medical": data.medical,
+        "Special Allowance": data.special,
+        "Bonus/Incentive": data.bonusIncentive,
+        "Overtime": data.overtimePayable,
+        "Gross Earnings": data.grossEarnings,
+        "Provident Fund": data.pfDeduction,
+        "Employee State Insurance": data.esiDeduction,
+        "Professional Tax": data.ptDeduction,
+        "Tax Deducted at Source": data.itTds,
+        "MLWF": data.mlwf,
+        "Salary Advance / Loan": data.loanRecovery,
+        "Other Deductions": data.otherDeductions,
+        "Total Deductions": data.totalDeductions,
+        "Net Salary": data.netWages
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(flatData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Muster Roll");
+    XLSX.writeFile(wb, `Muster_Roll_${selectedMonth}_${selectedYear}.xlsx`);
+  };
+
+  const { toast } = useToast();
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const monthName = months.find(m => m.value === selectedMonth)?.label || "";
+    const isWage = viewType === "wage";
+
+    const html = `
+      <html>
+        <head>
+          <title>${isWage ? 'Wage Register' : 'Muster Roll'} - ${monthName} ${selectedYear}</title>
+          <style>
+            @page { size: A3 landscape; margin: 10mm; }
+            body { font-family: sans-serif; font-size: 10px; color: #333; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #999; padding: 4px; text-align: center; }
+            th { background-color: #f3f4f6; font-weight: bold; }
+            .header { text-align: center; margin-bottom: 20px; }
+            .info-grid { display: grid; grid-template-cols: 1fr 1fr; margin-bottom: 10px; }
+            .text-left { text-align: left; }
+            .text-right { text-align: right; }
+            .unit-section { margin-top: 20px; page-break-inside: avoid; }
+            .unit-title { background: #00796b; color: white; padding: 4px 8px; font-weight: bold; margin: 0; }
+            .dept-title { background: #f0fdfa; color: #00796b; padding: 4px 8px; font-weight: bold; border-bottom: 1px solid #00796b; margin: 0; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 style="margin: 0;">${isWage ? 'FORM II - WAGE REGISTER' : 'FORM II - MUSTER ROLL'}</h1>
+            <p style="margin: 2px;">[See Rule 27(1)]</p>
+          </div>
+          <div class="info-grid">
+            <div class="text-left">
+              <p><strong>Establishment:</strong> ${establishmentName}</p>
+              <p><strong>Employer:</strong> ${employerName}</p>
+            </div>
+            <div class="text-right">
+              <p><strong>Month:</strong> ${monthName} ${selectedYear}</p>
+            </div>
+          </div>
+          ${Object.entries(hierarchicalData).map(([unitName, departments]) => `
+            <div class="unit-section">
+              <h2 class="unit-title text-left">Unit: ${unitName}</h2>
+              ${Object.entries(departments).map(([deptName, staff]) => `
+                <div style="margin-top: 10px;">
+                  <h3 class="dept-title text-left">Department: ${deptName}</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th rowspan="2">Sl No</th>
+                        <th rowspan="2">Employee Name</th>
+                        <th rowspan="2">Designation</th>
+                        <th colspan="${daysInMonth}">Attendance</th>
+                        <th rowspan="2">Days</th>
+                        ${isWage ? `
+                          <th rowspan="2">Basic</th>
+                          <th rowspan="2">Dearness Allowance</th>
+                          <th rowspan="2">House Rent Allowance</th>
+                          <th rowspan="2">Conveyance</th>
+                          <th rowspan="2">Medical</th>
+                          <th rowspan="2">Special Allowance</th>
+                          <th rowspan="2">Bonus/Incentive</th>
+                          <th rowspan="2">Overtime</th>
+                          <th rowspan="2">Gross Earnings</th>
+                          <th rowspan="2">Provident Fund</th>
+                          <th rowspan="2">Employee State Insurance</th>
+                          <th rowspan="2">Professional Tax</th>
+                          <th rowspan="2">Tax Deducted at Source</th>
+                          <th rowspan="2">MLWF</th>
+                          <th rowspan="2">Salary Advance / Loan</th>
+                          <th rowspan="2">Other Deductions</th>
+                          <th rowspan="2">Total Deductions</th>
+                          <th rowspan="2">Net Salary</th>
+                        ` : ''}
+                      </tr>
+                      <tr>
+                        ${Array.from({ length: daysInMonth }, (_, i) => `<th>${i + 1}</th>`).join('')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${staff.map((emp, index) => {
+                        const data = calculateEmployeeData(emp);
+                        return `
+                          <tr>
+                            <td>${index + 1}</td>
+                            <td class="text-left">${emp.firstName} ${emp.lastName}</td>
+                            <td>${emp.position || 'Worker'}</td>
+                            ${Array.from({ length: daysInMonth }, (_, i) => `<td>${getAttendanceForDay(emp.id, i + 1)}</td>`).join('')}
+                            <td>${data.totalDaysWorked}</td>
+                            ${isWage ? `
+                              <td>${data.basicSalary}</td>
+                              <td>${data.da}</td>
+                              <td>${data.hra}</td>
+                              <td>${data.conveyance}</td>
+                              <td>${data.medical}</td>
+                              <td>${data.special}</td>
+                              <td>${data.bonusIncentive}</td>
+                              <td>${data.overtimePayable}</td>
+                              <td>${data.grossEarnings}</td>
+                              <td>${data.pfDeduction}</td>
+                              <td>${data.esiDeduction}</td>
+                              <td>${data.ptDeduction}</td>
+                              <td>${data.itTds}</td>
+                              <td>${data.mlwf}</td>
+                              <td>${data.loanRecovery}</td>
+                              <td>${data.otherDeductions}</td>
+                              <td>${data.totalDeductions}</td>
+                              <td>${data.netWages}</td>
+                            ` : ''}
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `).join('')}
+            </div>
+          `).join('')}
+          <script>
+            window.onload = () => {
+              window.print();
+              window.onafterprint = () => window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  return (
+    <AppLayout>
+      <div className="h-full overflow-auto">
+        <div className="p-6 space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-between"
+          >
+            <div>
+              <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white" data-testid="text-page-title">Muster Roll & Wage Register</h1>
+              <p className="text-slate-500 font-medium">Maharashtra Factories Rules • Form II Compliance</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="hover-elevate font-bold shadow-sm" onClick={handlePrint} data-testid="button-print">
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="outline" className="hover-elevate font-bold shadow-sm text-teal-600 border-teal-200" onClick={exportToPDF} data-testid="button-export-pdf">
+                <FileText className="h-4 w-4 mr-2" />
+                Export PDF
+              </Button>
+              <Button className="hover-elevate font-bold shadow-md bg-teal-600 hover:bg-teal-700" onClick={exportToExcel} data-testid="button-export-excel">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+            </div>
+          </motion.div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Report Settings</CardTitle>
+                <Tabs value={viewType} onValueChange={(v) => setViewType(v as "muster" | "wage")} className="w-auto">
+                  <TabsList className="grid w-64 grid-cols-2">
+                    <TabsTrigger value="muster">Muster Roll</TabsTrigger>
+                    <TabsTrigger value="wage">Wage Register</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="space-y-2">
+                  <Label>Unit</Label>
+                  <Select value={selectedUnit} onValueChange={(val) => { setSelectedUnit(val); setSelectedDepartment("all"); }}>
+                    <SelectTrigger data-testid="select-unit">
+                      <SelectValue placeholder="All Units" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Units</SelectItem>
+                      {units.map((u) => (
+                        <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Department</Label>
+                  <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+                    <SelectTrigger data-testid="select-department">
+                      <SelectValue placeholder="All Departments" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {departments
+                        .filter(d => selectedUnit === "all" || d.unitId?.toString() === selectedUnit)
+                        .map((d) => (
+                          <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Establishment Name</Label>
+                  <Input 
+                    value={establishmentName} 
+                    onChange={(e) => setEstablishmentName(e.target.value)}
+                    data-testid="input-establishment-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Employer Name</Label>
+                  <Input 
+                    value={employerName} 
+                    onChange={(e) => setEmployerName(e.target.value)}
+                    data-testid="input-employer-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Month</Label>
+                  <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                    <SelectTrigger data-testid="select-month">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {months.map((m) => (
+                        <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Year</Label>
+                  <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                    <SelectTrigger data-testid="select-year">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((y) => (
+                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="print:shadow-none">
+            <CardHeader className="print:pb-2">
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">{viewType === "muster" ? "Form II - Muster Roll" : "Form II - Wage Register"}</p>
+                <p className="text-xs text-muted-foreground">[See Rule 27(1)]</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                <div>
+                  <p><strong>Name of the Establishment:</strong> {establishmentName}</p>
+                  <p><strong>Name of the Employer:</strong> {employerName}</p>
+                </div>
+                <div className="text-right">
+                  <p><strong>For the month of:</strong> {months.find(m => m.value === selectedMonth)?.label} {selectedYear}</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <div className="space-y-8">
+                {Object.entries(hierarchicalData).length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No employees found. Add employees to generate report.
+                  </div>
+                ) : (
+                  Object.entries(hierarchicalData).map(([unitName, departments]) => (
+                    <div key={unitName} className="space-y-4">
+                      <h2 className="text-xl font-bold text-teal-700 border-b-2 border-teal-100 pb-2 flex items-center gap-2">
+                        <Building2 className="h-5 w-5" />
+                        Unit: {unitName}
+                      </h2>
+                      
+                      {Object.entries(departments).map(([deptName, staff]) => (
+                        <div key={deptName} className="pl-4 space-y-2">
+                          <h3 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            Department: {deptName}
+                          </h3>
+                          
+                          <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white dark:bg-slate-950">
+                            <Table className="text-xs">
+                                  <TableHeader>
+                                    <TableRow className="bg-slate-50 dark:bg-slate-900">
+                                      <TableHead className="text-center w-10 border-r" rowSpan={2}>Sl No</TableHead>
+                                      <TableHead className="min-w-[180px] border-r" rowSpan={2}>Full name of employee</TableHead>
+                                      <TableHead className="text-center w-16 border-r" rowSpan={2}>Age/Sex</TableHead>
+                                      <TableHead className="min-w-[120px] border-r" rowSpan={2}>Designation</TableHead>
+                                      <TableHead className="text-center border-b" colSpan={daysInMonth}>Attendance Details</TableHead>
+                                      <TableHead className="text-center w-12 border-l" rowSpan={2}>{viewType === "muster" ? "Total Days" : "Days"}</TableHead>
+                                      {viewType === "wage" && (
+                                        <>
+                                          <TableHead className="text-center w-24 border-l" rowSpan={2}>Basic</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Dearness Allowance</TableHead>
+                                          <TableHead className="text-center w-32 border-l" rowSpan={2}>House Rent Allowance</TableHead>
+                                          <TableHead className="text-center w-24 border-l" rowSpan={2}>Conveyance</TableHead>
+                                          <TableHead className="text-center w-20 border-l" rowSpan={2}>Medical</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Special Allowance</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Bonus/Incentive</TableHead>
+                                          <TableHead className="text-center w-24 border-l" rowSpan={2}>Overtime</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Gross Earnings</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Provident Fund</TableHead>
+                                          <TableHead className="text-center w-36 border-l" rowSpan={2}>Employee State Insurance</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Professional Tax</TableHead>
+                                          <TableHead className="text-center w-32 border-l" rowSpan={2}>Tax Deducted at Source</TableHead>
+                                          <TableHead className="text-center w-20 border-l" rowSpan={2}>MLWF</TableHead>
+                                          <TableHead className="text-center w-32 border-l" rowSpan={2}>Salary Advance / Loan</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Other Deductions</TableHead>
+                                          <TableHead className="text-center w-28 border-l" rowSpan={2}>Total Deductions</TableHead>
+                                          <TableHead className="text-center w-28 border-l bg-teal-50 dark:bg-teal-900/20" rowSpan={2}>Net Salary</TableHead>
+                                        </>
+                                      )}
+                                    </TableRow>
+                                    <TableRow className="bg-slate-50/50 dark:bg-slate-900/50">
+                                      {Array.from({ length: daysInMonth }, (_, i) => (
+                                        <TableHead key={i} className="text-center w-8 p-1 border-r text-[10px] font-bold">{i + 1}</TableHead>
+                                      ))}
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {staff.map((emp, index) => {
+                                      const data = calculateEmployeeData(emp);
+                                      const dob = emp.dateOfBirth ? new Date(emp.dateOfBirth) : null;
+                                      const age = dob ? Math.floor((new Date().getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : "-";
+
+                                      return (
+                                        <TableRow key={emp.id} data-testid={`row-employee-${emp.id}`} className="hover:bg-slate-50/50 transition-colors">
+                                          <TableCell className="text-center border-r font-medium text-slate-500">{index + 1}</TableCell>
+                                          <TableCell className="font-semibold border-r text-slate-900 dark:text-slate-100 min-w-[180px]">{emp.firstName} {emp.lastName}</TableCell>
+                                          <TableCell className="text-center border-r text-slate-600 font-medium whitespace-nowrap">{age}/{emp.gender?.[0] || "M"}</TableCell>
+                                          <TableCell className="border-r text-slate-600 font-medium">{emp.position || "Worker"}</TableCell>
+                                          {Array.from({ length: daysInMonth }, (_, i) => (
+                                            <TableCell key={i} className={cn(
+                                              "text-center p-1 border-r text-[10px] font-black",
+                                              getAttendanceForDay(emp.id, i + 1) === 'P' ? "text-emerald-600 bg-emerald-50/20" : 
+                                              getAttendanceForDay(emp.id, i + 1) === 'A' ? "text-rose-600 bg-rose-50/20" : 
+                                              getAttendanceForDay(emp.id, i + 1) === 'L' ? "text-amber-600 bg-amber-50/20" :
+                                              "text-slate-400"
+                                            )}>
+                                              {getAttendanceForDay(emp.id, i + 1)}
+                                            </TableCell>
+                                          ))}
+                                          <TableCell className="text-center font-black border-l bg-slate-50/50 text-slate-900">{data.totalDaysWorked}</TableCell>
+                                          {viewType === "wage" && (
+                                            <>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.basicSalary.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.da.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.hra.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.conveyance.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.medical.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.special.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.bonusIncentive.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-slate-700">₹{data.overtimePayable.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-black text-slate-900 dark:text-slate-100 bg-slate-50/30">₹{data.grossEarnings.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.pfDeduction.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.esiDeduction.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.ptDeduction.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.itTds.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.mlwf.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.loanRecovery.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-amber-600 bg-amber-50/10">₹{data.otherDeductions.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-bold text-rose-600 bg-rose-50/10">₹{data.totalDeductions.toLocaleString()}</TableCell>
+                                              <TableCell className="text-right border-l font-black text-teal-700 bg-teal-50/50 dark:bg-teal-900/20 shadow-inner">{data.netWages.toLocaleString()}</TableCell>
+                                            </>
+                                          )}
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}

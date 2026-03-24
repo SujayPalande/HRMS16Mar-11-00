@@ -1,0 +1,19 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[1G[0KWarning: SENDGRID_API_KEY not configured. Email functionality will be disabled.
+9:55:46 AM [express] Serving on 0.0.0.0:5000
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m9:55:50 AM[22m [31m[1m[vite][22m[39m Pre-transform error: /home/runner/workspace/client/src/pages/letters/appointment-page.tsx: Identifier 'setLetters' has already been declared. (73:8)
+
+[0m [90m 71 |[39m   }[33m,[39m [baseLetters[33m,[39m letterOverrides])[33m;[39m
+ [90m 72 |[39m
+[31m[1m>[22m[39m[90m 73 |[39m   [36mconst[39m setLetters [33m=[39m (updater[33m:[39m [33mAppointmentLetter[39m[] [33m|[39m ((prev[33m:[39m [33mAppointmentLetter[39m[]) [33m=>[39m [33mAppointmentLetter[39m[])) [33m=>[39m {
+ [90m    |[39m         [31m[1m^[22m[39m
+ [90m 74 |[39m     [36mconst[39m next [33m=[39m [36mtypeof[39m updater [33m===[39m [32m'function'[39m [33m?[39m updater([[33m...[39mallLetters]) [33m:[39m updater[33m;[39m
+ [90m 75 |[39m     setLetterOverrides(next)[33m;[39m
+ [90m 76 |[39m   }[33m;[39m[0m
+[1G[0K⠙[1G[0K

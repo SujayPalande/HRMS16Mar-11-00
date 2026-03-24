@@ -1,0 +1,33 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[1G[0KWarning: SENDGRID_API_KEY not configured. Email functionality will be disabled.
+5:57:12 AM [express] Serving on 0.0.0.0:5000
+Error: [31m  Failed to scan for dependencies from entries:
+  /home/runner/workspace/client/index.html
+
+  [39m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mThe symbol "monthsList" has already been declared[0m
+
+    client/src/pages/reports/payroll-page.tsx:130:8:
+[37m      130 │   const [32mmonthsList[37m = ["January", "February", "March", "April", "M...
+          ╵         [32m~~~~~~~~~~[0m
+
+  The symbol "monthsList" was originally declared here:
+
+    client/src/pages/reports/payroll-page.tsx:45:8:
+[37m      45 │   const [32mmonthsList[37m = ["January", "February", "March", "April", "Ma...
+         ╵         [32m~~~~~~~~~~[0m
+
+
+    at failureErrorWithLog (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:1472:15)
+    at /home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:945:25
+    at runOnEndCallbacks (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:1315:45)
+    at buildResponseToResult (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:943:7)
+    at /home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:955:9
+    at new Promise (<anonymous>)
+    at requestCallbacks.on-end (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:954:54)
+    at handleRequest (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:647:17)
+    at handleIncomingPacket (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:672:7)
+    at Socket.readFromStdout (/home/runner/workspace/node_modules/vite/node_modules/esbuild/lib/main.js:600:7)
+[1G[0K⠙[1G[0K

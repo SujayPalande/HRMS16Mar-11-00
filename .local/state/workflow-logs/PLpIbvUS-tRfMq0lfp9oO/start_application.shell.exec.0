@@ -1,0 +1,260 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[1G[0KWarning: SENDGRID_API_KEY not configured. Email functionality will be disabled.
+5:57:30 AM [express] Serving on 0.0.0.0:5000
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+5:57:39 AM [express] GET /api/user 401 in 2ms
+5:57:39 AM [express] GET /api/settings/system 401 in 0ms :: {"message":"Unauthorized"}
+5:58:21 AM [express] GET /api/user 401 in 2ms
+5:58:21 AM [express] GET /api/settings/system 401 in 0ms :: {"message":"Unauthorized"}
+Login attempt for user: nk@asn.com
+User found, checking password
+Password validation result: true
+Login successful with stored password
+5:58:28 AM [express] POST /api/login 200 in 91ms :: {"id":999,"username":"nk@asn.com","email":"nk@as…
+5:58:28 AM [express] GET /api/notifications/unread 200 in 2ms :: [{"userId":999,"type":"login","titl…
+5:58:28 AM [express] GET /api/notifications 200 in 1ms :: [{"userId":999,"type":"login","title":"Suc…
+5:58:28 AM [express] GET /api/attendance 200 in 1ms :: [{"userId":999,"checkInTime":"2026-03-23T07:2…
+5:58:28 AM [express] GET /api/attendance 200 in 32ms :: [{"id":1,"userId":1,"date":"2025-10-01T00:00…
+5:58:28 AM [express] GET /api/departments 200 in 32ms :: [{"id":1,"name":"Human Resources","descript…
+5:58:28 AM [express] GET /api/employees 200 in 2ms :: [{"id":1,"username":"navnath1","email":"rohan@…
+5:58:29 AM [express] GET /api/masters/units 200 in 0ms :: [{"id":1,"code":"CYB","name":"Cybaem Tech …
+5:58:29 AM [express] GET /api/attendance 200 in 4ms :: [{"id":5417,"userId":1,"date":"2026-03-24T00:…
+5:58:29 AM [express] GET /api/leave-requests 200 in 1ms :: [{"id":7,"userId":3,"type":"annual","star…
+5:58:29 AM [express] GET /api/holidays 200 in 1ms :: [{"id":3,"name":"New Year's Day","date":"2025-0…
+5:58:36 AM [express] GET /api/departments 304 in 2ms :: [{"id":1,"name":"Human Resources","descripti…
+5:58:36 AM [express] GET /api/masters/units 304 in 1ms :: [{"id":1,"code":"CYB","name":"Cybaem Tech …
+5:58:36 AM [express] GET /api/leave-requests 200 in 3ms :: [{"id":1,"userId":1,"type":"casual","star…
+5:58:36 AM [express] GET /api/employees 304 in 1ms :: [{"id":1,"username":"navnath1","email":"rohan@…
+5:59:06 AM [express] GET /api/notifications/unread 304 in 3ms :: [{"userId":999,"type":"login","titl…
+5:59:37 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:00:08 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:00:38 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:01:08 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:01:38 AM [express] GET /api/notifications/unread 304 in 2ms :: [{"userId":999,"type":"login","titl…
+6:02:09 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:02:39 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:03:09 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:03:39 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:04:10 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:04:17 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/payroll-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:04:21 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/payroll-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m [33m(x2)[39m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:04:35 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/leave-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m
+6:04:40 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:05:10 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:05:19 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/leave-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m [33m(x2)[39m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:05:31 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/leave-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m [33m(x3)[39m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:05:37 AM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/reports/leave-page.tsx, /src/index.css?v=Ld_2xi9NiDVUEDGIl55Z7[22m [33m(x4)[39m
+6:06:10 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:06:41 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:06:51 AM [express] GET /api/employees/leave-balances 404 in 1ms :: {"message":"Employee not found"}
+6:06:51 AM [express] GET /api/settings/system 200 in 2ms :: {"organizationName":"HR Connect","organi…
+6:07:25 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:09:19 AM [express] GET /api/employees/leave-balances 404 in 1ms :: {"message":"Employee not found"}
+6:09:49 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:10:19 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:10:20 AM [express] GET /api/payroll/payments 200 in 8ms
+6:10:50 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:11:21 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:11:51 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:12:21 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:12:51 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:13:22 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:13:41 AM [express] GET /api/settings/system 304 in 1ms :: {"organizationName":"HR Connect","organi…
+6:13:41 AM [express] GET /api/payroll 200 in 3ms
+6:14:11 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:14:43 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:16:22 AM [express] GET /api/notifications/unread 304 in 0ms :: [{"userId":999,"type":"login","titl…
+6:17:55 AM [express] GET /api/payroll 200 in 3ms
+6:17:56 AM [express] GET /api/leave-requests 304 in 2ms :: [{"id":1,"userId":1,"type":"casual","star…
+6:18:25 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:18:56 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:19:26 AM [express] GET /api/notifications/unread 304 in 1ms :: [{"userId":999,"type":"login","titl…
+6:19:28 AM [express] PUT /api/notifications/read-all 200 in 50ms :: {"message":"All notifications ma…
+6:19:28 AM [express] GET /api/notifications/unread 200 in 0ms :: []
+6:19:28 AM [express] GET /api/notifications 200 in 1ms :: [{"userId":999,"type":"login","title":"Suc…
+6:19:59 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:20:29 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:20:33 AM [express] GET /api/settings/system 304 in 1ms :: {"organizationName":"HR Connect","organi…
+6:21:03 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:21:33 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:22:03 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:22:34 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:23:04 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:23:34 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:25:04 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:25:35 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:25:38 AM [express] GET /api/settings/system 304 in 1ms :: {"organizationName":"HR Connect","organi…
+6:26:08 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:26:39 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:27:09 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:27:39 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:35:15 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:35:45 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:36:16 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:36:46 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:37:16 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:37:47 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:38:11 AM [express] GET /api/settings/system 304 in 1ms :: {"organizationName":"HR Connect","organi…
+6:38:41 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:39:12 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:39:42 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:40:12 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:40:42 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:41:13 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:41:43 AM [express] GET /api/notifications/unread 304 in 73ms :: []
+6:42:13 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:42:44 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:43:14 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:43:20 AM [express] GET /api/settings/system 304 in 2ms :: {"organizationName":"HR Connect","organi…
+6:44:50 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:45:20 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:45:50 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:46:21 AM [express] GET /api/notifications/unread 304 in 0ms :: []
+6:46:51 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:47:21 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:48:21 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:52:22 AM [express] GET /api/notifications/unread 304 in 1ms :: []
+6:54:52 AM [express] GET /api/notifications/unread 304 in 1ms :: []
