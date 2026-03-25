@@ -5,9 +5,34 @@ HR Connect is a comprehensive HR management system built with React, TypeScript,
 
 ## Architecture
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS + shadcn/ui
-- **Backend**: Express.js + TypeScript
-- **Database**: PostgreSQL with Drizzle ORM (currently using in-memory storage)
+- **Backend (Replit dev)**: Express.js + TypeScript
+- **Backend (IIS production)**: Core PHP 8.0+ with MySQL — see `php-backend/`
+- **Database (dev)**: PostgreSQL with Drizzle ORM
+- **Database (production)**: MySQL 5.7+ / MariaDB 10.3+
 - **Authentication**: Session-based authentication with role-based access control
+
+## PHP Backend for SpeedCloud IIS (`php-backend/`)
+Complete PHP 8.0+ backend for deployment on Windows IIS (SpeedCloud):
+- `php-backend/index.php` — Front-controller router (entry point for all `/api/*`)
+- `php-backend/config/database.php` — MySQL PDO connection, SMTP, APP_BASE_URL constants
+- `php-backend/schema.sql` — Complete MySQL schema with default admin user
+- `php-backend/setup.php` — First-time setup script (import schema + create admin; delete after use)
+- `php-backend/web.config` — IIS URL Rewrite rules (SPA fallback + API routing)
+- `php-backend/helpers/Auth.php` — Session-based auth, bcrypt password hashing
+- `php-backend/helpers/Response.php` — JSON response helpers
+- `php-backend/helpers/Mail.php` — SMTP email helper (replaces SendGrid)
+- `php-backend/controllers/` — All controllers: Auth, Employee, Department, Attendance, Leave, Holiday, Notification, Payroll, Report, Master, Settings
+- `php-backend/build-iis-package.sh` — Build script to create deployment zip
+- `php-backend/README-iis-deploy.md` — Full IIS deployment guide
+
+### IIS Deployment Steps
+1. `npm run build` → creates `dist/`
+2. `bash php-backend/build-iis-package.sh` → creates `hrconnect-iis-deploy.zip`
+3. Upload zip to SpeedCloud web root and extract
+4. Configure env vars (DB_HOST, DB_NAME, DB_USER, DB_PASS, SESSION_SECRET, SMTP_*)
+5. Visit `https://yourdomain.com/api/setup.php` → imports schema, creates admin
+6. Delete `api/setup.php` immediately after
+7. Login: admin / Admin@1234 (change immediately)
 
 ## Key Features
 - **Employee Management**: Complete employee records with role-based access control
