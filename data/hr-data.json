@@ -60502,6 +60502,28 @@
       "createdAt": "2026-03-24T08:51:37.383Z",
       "relatedUserId": null,
       "relatedLeaveId": null
+    },
+    {
+      "userId": 999,
+      "type": "login",
+      "title": "Successful Login",
+      "message": "You have successfully logged in at 3/25/2026",
+      "isRead": false,
+      "id": 26,
+      "createdAt": "2026-03-25T11:26:27.468Z",
+      "relatedUserId": null,
+      "relatedLeaveId": null
+    },
+    {
+      "userId": 999,
+      "type": "login",
+      "title": "Successful Login",
+      "message": "You have successfully logged in at 3/25/2026",
+      "isRead": false,
+      "id": 27,
+      "createdAt": "2026-03-25T11:35:01.526Z",
+      "relatedUserId": null,
+      "relatedLeaveId": null
     }
   ],
   "currentUserId": 1000,
@@ -60509,7 +60531,7 @@
   "currentAttendanceId": 6503,
   "currentLeaveRequestId": 152,
   "currentHolidayId": 67,
-  "currentNotificationId": 26,
+  "currentNotificationId": 28,
   "paymentRecords": [
     {
       "id": 1,
