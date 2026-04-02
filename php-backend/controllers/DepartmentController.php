@@ -14,7 +14,7 @@ class DepartmentController {
              LEFT JOIN units u ON u.id=d.unit_id
              ORDER BY d.name'
         );
-        Response::json($stmt->fetchAll());
+        Response::json(Auth::camelize($stmt->fetchAll()));
     }
 
     public function show(int $id): void {

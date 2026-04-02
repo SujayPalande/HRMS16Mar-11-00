@@ -8,12 +8,13 @@ class ReportController {
     public function attendance(array $user, array $query): void {
         $startDate  = $query['startDate']   ?? null;
         $endDate    = $query['endDate']     ?? null;
-        $deptId     = isset($query['departmentId']) ? (int)$query['departmentId'] : null;
+        $deptId     = isset($query['departmentId']) && $query['departmentId'] !== 'all' ? (int)$query['departmentId'] : null;
+        $unitId     = isset($query['unitId']) && $query['unitId'] !== 'all' ? (int)$query['unitId'] : null;
 
         if (!$startDate || !$endDate) Response::error('startDate and endDate are required');
 
         $db     = getDB();
-        $users  = $this->getUsers($db, $deptId);
+        $users  = $this->getUsers($db, $deptId, $unitId);
         $result = [];
 
         foreach ($users as $u) {
@@ -24,8 +25,14 @@ class ReportController {
             $recs = $stmt->fetchAll();
             if ($recs) {
                 $result[] = [
-                    'user'    => ['id'=>$u['id'],'firstName'=>$u['first_name'],'lastName'=>$u['last_name'],'position'=>$u['position'],'departmentId'=>$u['department_id']],
-                    'records' => $recs
+                    'user'    => [
+                        'id'           => (int)$u['id'],
+                        'firstName'    => $u['first_name'],
+                        'lastName'     => $u['last_name'],
+                        'position'     => $u['position'],
+                        'departmentId' => (int)$u['department_id'],
+                    ],
+                    'records' => Auth::camelize($recs)
                 ];
             }
         }
@@ -35,13 +42,14 @@ class ReportController {
     public function leave(array $user, array $query): void {
         $startDate = $query['startDate'] ?? null;
         $endDate   = $query['endDate']   ?? null;
-        $deptId    = isset($query['departmentId']) ? (int)$query['departmentId'] : null;
+        $deptId    = isset($query['departmentId']) && $query['departmentId'] !== 'all' ? (int)$query['departmentId'] : null;
+        $unitId    = isset($query['unitId']) && $query['unitId'] !== 'all' ? (int)$query['unitId'] : null;
         $status    = $query['status']    ?? null;
 
         if (!$startDate || !$endDate) Response::error('startDate and endDate are required');
 
         $db     = getDB();
-        $users  = $this->getUsers($db, $deptId);
+        $users  = $this->getUsers($db, $deptId, $unitId);
         $result = [];
 
         foreach ($users as $u) {
@@ -56,20 +64,35 @@ class ReportController {
             if ($status) $recs = array_values(array_filter($recs, fn($r) => $r['status'] === $status));
             if ($recs) {
                 $result[] = [
-                    'user'          => ['id'=>$u['id'],'firstName'=>$u['first_name'],'lastName'=>$u['last_name'],'position'=>$u['position'],'departmentId'=>$u['department_id']],
-                    'leaveRequests' => $recs
+                    'user'          => [
+                        'id'           => (int)$u['id'],
+                        'firstName'    => $u['first_name'],
+                        'lastName'     => $u['last_name'],
+                        'position'     => $u['position'],
+                        'departmentId' => (int)$u['department_id'],
+                    ],
+                    'leaveRequests' => Auth::camelize($recs)
                 ];
             }
         }
         Response::json($result);
     }
 
-    private function getUsers(PDO $db, ?int $deptId): array {
+    private function getUsers(PDO $db, ?int $deptId, ?int $unitId = null): array {
         if ($deptId) {
-            $stmt = $db->prepare("SELECT * FROM users WHERE department_id=? AND role!='developer' AND is_active=1 ORDER BY first_name");
+            $stmt = $db->prepare("SELECT u.* FROM users u WHERE u.department_id=? AND u.role!='developer' AND u.is_active=1 ORDER BY u.first_name");
             $stmt->execute([$deptId]);
+        } elseif ($unitId) {
+            // Filter by unit via department join
+            $stmt = $db->prepare("
+                SELECT u.* FROM users u
+                JOIN departments d ON d.id = u.department_id
+                WHERE d.unit_id=? AND u.role!='developer' AND u.is_active=1
+                ORDER BY u.first_name
+            ");
+            $stmt->execute([$unitId]);
         } else {
-            $stmt = $db->query("SELECT * FROM users WHERE role!='developer' AND is_active=1 ORDER BY first_name");
+            $stmt = $db->query("SELECT u.* FROM users u WHERE u.role!='developer' AND u.is_active=1 ORDER BY u.first_name");
         }
         return $stmt->fetchAll();
     }

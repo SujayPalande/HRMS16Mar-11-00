@@ -85,9 +85,9 @@ export default function LeaveReportPage() {
 
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp: User) => {
-      const dept = departments.find(d => d.id === emp.departmentId);
-      const matchesUnit = selectedUnit === 'all' || (dept && dept.unitId === parseInt(selectedUnit));
-      const matchesDept = selectedDept === 'all' || emp.departmentId === parseInt(selectedDept);
+      const dept = departments.find(d => d.id == emp.departmentId);
+      const matchesUnit = selectedUnit === 'all' || (dept && dept.unitId == selectedUnit);
+      const matchesDept = selectedDept === 'all' || emp.departmentId == selectedDept;
       const empIdFormatted = emp.employeeId || `EMP${String(emp.id).padStart(3, '0')}`;
       const matchesSearch = searchQuery === "" || 
         `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -97,8 +97,8 @@ export default function LeaveReportPage() {
   }, [employees, departments, selectedUnit, selectedDept, searchQuery]);
 
   const filteredDepartments = departments.filter((dept: Department) => 
-    (selectedUnit === "all" || dept.unitId === parseInt(selectedUnit)) &&
-    (selectedDept === "all" || dept.id === parseInt(selectedDept))
+    (selectedUnit === "all" || dept.unitId == selectedUnit) &&
+    (selectedDept === "all" || dept.id == selectedDept)
   );
 
   const toggleEmployee = (empId: number) => {
@@ -733,7 +733,7 @@ export default function LeaveReportPage() {
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
                 {departments
-                  .filter(d => selectedUnit === "all" || d.unitId === parseInt(selectedUnit))
+                  .filter(d => selectedUnit === "all" || d.unitId == selectedUnit)
                   .map(d => (
                     <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                   ))}

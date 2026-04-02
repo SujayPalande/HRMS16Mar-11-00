@@ -25,28 +25,31 @@ class AttendanceController {
         if ($userId) {
             if ($role === 'employee' && $userId !== $currentId) Response::forbidden('You can only view your own attendance');
             $records = $this->byUser($db, $userId, $month);
-            Response::json($records);
+            Response::json(Auth::camelize($records));
+            return;
         }
 
         if ($date) {
             if ($role !== 'admin') Response::forbidden('Only administrators can query by date');
-            Response::json($this->byDate($db, $date));
+            Response::json(Auth::camelize($this->byDate($db, $date)));
+            return;
         }
 
         if ($month) {
             if ($role === 'admin') {
-                Response::json($this->byMonth($db, $month));
+                Response::json(Auth::camelize($this->byMonth($db, $month)));
             } else {
-                Response::json($this->byUser($db, $currentId, $month));
+                Response::json(Auth::camelize($this->byUser($db, $currentId, $month)));
             }
+            return;
         }
 
         // No params
         if ($role === 'admin') {
             $stmt = $db->query('SELECT * FROM attendance_records ORDER BY date DESC');
-            Response::json($stmt->fetchAll());
+            Response::json(Auth::camelize($stmt->fetchAll()));
         } else {
-            Response::json($this->byUser($db, $currentId, null));
+            Response::json(Auth::camelize($this->byUser($db, $currentId, null)));
         }
     }
 
@@ -76,7 +79,7 @@ class AttendanceController {
         $id   = (int)$db->lastInsertId();
         $row  = $db->prepare('SELECT * FROM attendance_records WHERE id=? LIMIT 1');
         $row->execute([$id]);
-        Response::json($row->fetch(), 201);
+        Response::json(Auth::camelize($row->fetch()), 201);
     }
 
     public function update(array $user, int $id, array $body): void {
@@ -101,13 +104,13 @@ class AttendanceController {
 
         $row = $db->prepare('SELECT * FROM attendance_records WHERE id=? LIMIT 1');
         $row->execute([$id]);
-        Response::json($row->fetch());
+        Response::json(Auth::camelize($row->fetch()));
     }
 
     public function checkIn(array $user): void {
         $db   = getDB();
-        $now  = date('Y-m-d H:i:s');
         $today = date('Y-m-d');
+        $now  = date('Y-m-d H:i:s');
 
         $exists = $db->prepare(
             "SELECT id FROM attendance_records WHERE user_id=? AND DATE(date)=? LIMIT 1"
@@ -121,7 +124,7 @@ class AttendanceController {
         $id  = (int)$db->lastInsertId();
         $row = $db->prepare('SELECT * FROM attendance_records WHERE id=? LIMIT 1');
         $row->execute([$id]);
-        Response::json($row->fetch(), 201);
+        Response::json(Auth::camelize($row->fetch()), 201);
     }
 
     public function checkOut(array $user): void {
@@ -144,7 +147,7 @@ class AttendanceController {
 
         $row = $db->prepare('SELECT * FROM attendance_records WHERE id=? LIMIT 1');
         $row->execute([$rec['id']]);
-        Response::json($row->fetch());
+        Response::json(Auth::camelize($row->fetch()));
     }
 
     public function bulk(array $user, array $body): void {

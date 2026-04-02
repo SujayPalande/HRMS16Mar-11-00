@@ -9,7 +9,7 @@ class PayrollController {
         $salary          = (float)($body['salary']           ?? 0);
         $overtimeHours   = (float)($body['overtimeHours']    ?? 0);
         $daysWorked      = (float)($body['daysWorked']       ?? 25);
-        $totalDays       = (float)($body['totalDaysInMonth'] ?? 30);
+        $totalDays       = (float)($body['totalDaysInMonth'] ?? 31);
 
         $settings        = $this->getSettings();
         $sc              = $settings['salaryComponents'] ?? [];
@@ -38,7 +38,6 @@ class PayrollController {
         $epfEmployee = min($basic, $basicLimit) * 0.12;
 
         $esicEmployee = $gross <= 21000 ? round($gross * 0.0075) : 0;
-        $esicEmployer = $gross <= 21000 ? round($gross * 0.0325) : 0;
 
         $pt  = 200;
         $mo  = (int)date('m');
@@ -63,6 +62,7 @@ class PayrollController {
         $canViewAll  = Auth::hasPermission($user, 'payroll.view');
         $canViewOwn  = Auth::hasPermission($user, 'payroll.view_own');
 
+        $stmt = null;
         if ($canViewAll) {
             if ($employeeId) {
                 $stmt = $db->prepare('SELECT * FROM payment_records WHERE employee_id=? ORDER BY created_at DESC');
@@ -73,25 +73,30 @@ class PayrollController {
             } else {
                 $stmt = $db->query('SELECT * FROM payment_records ORDER BY created_at DESC');
             }
-            Response::json($stmt->fetchAll());
-        }
-
-        if ($canViewOwn) {
+        } elseif ($canViewOwn) {
             $stmt = $db->prepare('SELECT * FROM payment_records WHERE employee_id=? ORDER BY created_at DESC');
             $stmt->execute([$user['id']]);
-            $records = $stmt->fetchAll();
-            if ($month) {
-                $records = array_filter($records, fn($r) => $r['month'] === $month);
-            }
-            Response::json(array_values($records));
         }
 
-        Response::forbidden();
+        if (!$stmt) Response::forbidden();
+
+        $records = $stmt->fetchAll();
+        if (!$canViewAll && $month) {
+            $records = array_values(array_filter($records, fn($r) => $r['month'] === $month));
+        }
+
+        Response::json(Auth::camelize($records));
     }
 
     public function createPaymentRecord(array $user, array $body): void {
         if (!Auth::hasPermission($user, 'payroll.process')) Response::forbidden();
         $db   = getDB();
+        
+        $paymentDate = $body['paymentDate'] ?? null;
+        if ($paymentDate) {
+            $paymentDate = date('Y-m-d H:i:s', strtotime($paymentDate));
+        }
+
         $stmt = $db->prepare(
             'INSERT INTO payment_records (employee_id, month, payment_status, amount, payment_date, payment_mode, reference_no, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, NOW())'
@@ -101,19 +106,24 @@ class PayrollController {
             $body['month']               ?? '',
             $body['paymentStatus']       ?? 'pending',
             (int)($body['amount']        ?? 0),
-            $body['paymentDate']         ?? null,
+            $paymentDate,
             $body['paymentMode']         ?? null,
             $body['referenceNo']         ?? null,
         ]);
         $id  = (int)$db->lastInsertId();
         $row = $db->prepare('SELECT * FROM payment_records WHERE id=? LIMIT 1');
         $row->execute([$id]);
-        Response::json($row->fetch(), 201);
+        Response::json(Auth::camelize($row->fetch()), 201);
     }
 
     public function updatePaymentRecord(array $user, int $id, array $body): void {
         if (!Auth::hasPermission($user, 'payroll.process')) Response::forbidden();
         $db   = getDB();
+
+        if (isset($body['paymentDate']) && $body['paymentDate']) {
+            $body['paymentDate'] = date('Y-m-d H:i:s', strtotime($body['paymentDate']));
+        }
+
         $check = $db->prepare('SELECT id FROM payment_records WHERE id=? LIMIT 1');
         $check->execute([$id]);
         if (!$check->fetch()) Response::notFound('Payment record not found');
@@ -126,7 +136,7 @@ class PayrollController {
         if (!empty($sets)) { $values[] = $id; $db->prepare('UPDATE payment_records SET ' . implode(', ', $sets) . ' WHERE id=?')->execute($values); }
         $stmt = $db->prepare('SELECT * FROM payment_records WHERE id=? LIMIT 1');
         $stmt->execute([$id]);
-        Response::json($stmt->fetch());
+        Response::json(Auth::camelize($stmt->fetch()));
     }
 
     public function deletePaymentRecord(array $user, int $id): void {

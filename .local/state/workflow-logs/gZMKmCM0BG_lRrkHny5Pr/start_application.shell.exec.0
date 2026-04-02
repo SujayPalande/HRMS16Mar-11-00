@@ -1,0 +1,6 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[1G[0KWarning: SENDGRID_API_KEY not configured. Email functionality will be disabled.
+2:59:57 AM [express] Serving on 0.0.0.0:5000

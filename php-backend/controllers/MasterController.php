@@ -8,7 +8,7 @@ class MasterController {
 
     public function getUnits(): void {
         $db = getDB();
-        Response::json($db->query('SELECT * FROM units ORDER BY name')->fetchAll());
+        Response::json(Auth::camelize($db->query('SELECT * FROM units ORDER BY name')->fetchAll()));
     }
 
     public function createUnit(array $body): void {

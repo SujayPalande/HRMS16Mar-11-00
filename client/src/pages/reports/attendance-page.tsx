@@ -82,9 +82,9 @@ export default function AttendanceReportPage() {
 
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp: User) => {
-      const dept = departments.find(d => d.id === emp.departmentId);
-      const matchesUnit = selectedUnit === 'all' || (dept && dept.unitId === parseInt(selectedUnit));
-      const matchesDept = selectedDept === 'all' || emp.departmentId === parseInt(selectedDept);
+      const dept = departments.find(d => d.id == emp.departmentId);
+      const matchesUnit = selectedUnit === 'all' || (dept && dept.unitId == selectedUnit);
+      const matchesDept = selectedDept === 'all' || emp.departmentId == selectedDept;
       const empIdFormatted = `EMP${String(emp.id).padStart(3, '0')}`;
       const matchesSearch = searchQuery === "" || 
         `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -94,8 +94,8 @@ export default function AttendanceReportPage() {
   }, [employees, departments, selectedUnit, selectedDept, searchQuery]);
 
   const filteredDepartments = departments.filter((d: Department) => 
-    (selectedUnit === "all" || d.unitId === parseInt(selectedUnit)) &&
-    (selectedDept === "all" || d.id === parseInt(selectedDept))
+    (selectedUnit === "all" || d.unitId == selectedUnit) &&
+    (selectedDept === "all" || d.id == selectedDept)
   );
 
   const getDetailedAttendance = (userId: number) => {

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/Response.php';
 
 class Auth {
 
@@ -12,30 +13,14 @@ class Auth {
 
     /**
      * Verify a plain password against a stored hash.
-     * Supports:
-     *  - PHP bcrypt hashes (from password_hash)
-     *  - Node.js scrypt hashes in the format  hex_hash.hex_salt
      */
     public static function verifyPassword(string $supplied, string $stored): bool {
-        // bcrypt hash (starts with $2y$ or $2b$ or $argon2 etc)
         if (str_starts_with($stored, '$2')) {
             return password_verify($supplied, $stored);
         }
-
-        // Node.js scrypt format: <64-byte-hex>.<16-byte-hex-salt>
         if (substr_count($stored, '.') === 1) {
-            [$hashHex, $saltHex] = explode('.', $stored, 2);
-            if (strlen($hashHex) === 128 && strlen($saltHex) === 32) {
-                $derived = hash_hkdf('sha256', $supplied, 64, '', hex2bin($saltHex));
-                // PHP doesn't have scrypt natively — we mark these as needing re-hash
-                // Return false so user is prompted to change password on first login
-                // Or uncomment the line below if you install a scrypt extension:
-                // return hash_equals($hashHex, bin2hex(scrypt($supplied, hex2bin($saltHex), 16384, 8, 1, 64)));
-                return false;
-            }
+            return false; // scrypt not supported
         }
-
-        // Fallback plain-text compare (legacy / initial setup only)
         return hash_equals($stored, $supplied);
     }
 
@@ -89,7 +74,7 @@ class Auth {
      */
     public static function getPermissions(array $user): array {
         $adminRoles = ['admin', 'developer'];
-        if (in_array($user['role'], $adminRoles, true)) {
+        if (in_array(($user['role'] ?? ''), $adminRoles, true)) {
             return ['all'];
         }
 
@@ -115,14 +100,13 @@ class Auth {
             ],
         ];
 
-        $defaults = $base[$user['role']] ?? [];
+        $role = $user['role'] ?? 'employee';
+        $defaults = $base[$role] ?? $base['employee'];
 
-        // Merge custom permissions stored as JSON array
+        $customRaw = $user['custom_permissions'] ?? ($user['customPermissions'] ?? []);
         $custom = [];
-        if (!empty($user['custom_permissions'])) {
-            $custom = is_array($user['custom_permissions'])
-                ? $user['custom_permissions']
-                : json_decode($user['custom_permissions'], true) ?? [];
+        if (!empty($customRaw)) {
+            $custom = is_array($customRaw) ? $customRaw : (json_decode($customRaw, true) ?? []);
         }
 
         return array_unique(array_merge($defaults, $custom));
@@ -134,29 +118,66 @@ class Auth {
     }
 
     /**
-     * Remove sensitive fields from user array before returning to client.
+     * Map all snake_case keys in an array (or list of arrays) to camelCase.
+     */
+    public static function camelize(array $data): array {
+        if (empty($data)) return [];
+        
+        // Handle list of objects
+        if (isset($data[0]) && is_array($data[0])) {
+            return array_map([self::class, 'camelize'], $data);
+        }
+
+        $sanitized = [];
+        foreach ($data as $key => $value) {
+            $camelKey = str_replace(' ', '', lcfirst(ucwords(str_replace('_', ' ', (string)$key))));
+            
+            // Explicitly cast common ID fields to integer for strict comparison in React
+            if ($camelKey === 'id' || str_ends_with($camelKey, 'Id') || str_ends_with($camelKey, 'ID')) {
+                if ($value !== null && is_numeric($value)) { $value = (int)$value; }
+            }
+            
+            // Cast boolean flags
+            if (str_ends_with($camelKey, 'Applicable') || $camelKey === 'isActive' || $camelKey === 'isRead') {
+                $value = $value !== null ? (bool)$value : false;
+            }
+            
+            $sanitized[$camelKey] = $value;
+        }
+        return $sanitized;
+    }
+
+    /**
+     * Remove sensitive fields from user array and map to camelCase.
      */
     public static function sanitizeUser(array $user): array {
         unset($user['password']);
-        // Decode JSON fields
-        if (isset($user['custom_permissions']) && is_string($user['custom_permissions'])) {
-            $user['custom_permissions'] = json_decode($user['custom_permissions'], true) ?? [];
+        $sanitized = self::camelize($user);
+        
+        // Ensure critical fields match the expected types and defaults
+        if (isset($sanitized['customPermissions']) && is_string($sanitized['customPermissions'])) {
+            $sanitized['customPermissions'] = json_decode($sanitized['customPermissions'], true) ?? [];
         }
-        if (isset($user['documents']) && is_string($user['documents'])) {
-            $user['documents'] = json_decode($user['documents'], true) ?? [];
+        if (isset($sanitized['documents']) && is_string($sanitized['documents'])) {
+            $sanitized['documents'] = json_decode($sanitized['documents'], true) ?? [];
         }
-        return $user;
+
+        $stringFields = ['firstName', 'lastName', 'username', 'email', 'role', 'position', 'employeeId', 'workLocation'];
+        foreach ($stringFields as $field) {
+            $sanitized[$field] = (string)($sanitized[$field] ?? '');
+        }
+
+        if (empty($sanitized['role'])) $sanitized['role'] = 'employee';
+        if (!isset($sanitized['customPermissions']) || !is_array($sanitized['customPermissions'])) $sanitized['customPermissions'] = [];
+        if (!isset($sanitized['documents']) || !is_array($sanitized['documents'])) $sanitized['documents'] = [];
+
+        return $sanitized;
     }
 
     private static function startSession(): void {
         if (session_status() === PHP_SESSION_NONE) {
             session_name('hrconnect_session');
-            session_set_cookie_params([
-                'lifetime' => 86400,
-                'path'     => '/',
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
+            session_set_cookie_params(['lifetime' => 86400, 'path' => '/', 'httponly' => true, 'samesite' => 'Lax']);
             session_start();
         }
     }

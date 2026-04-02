@@ -13,17 +13,20 @@ class LeaveController {
         if ($userId) {
             $stmt = $db->prepare('SELECT * FROM leave_requests WHERE user_id=? ORDER BY created_at DESC');
             $stmt->execute([$userId]);
-            Response::json($stmt->fetchAll());
+            Response::json(Auth::camelize($stmt->fetchAll()));
+            return;
         }
 
         if ($status === 'pending') {
             $stmt = $db->query("SELECT * FROM leave_requests WHERE status='pending' ORDER BY created_at DESC");
-            Response::json($stmt->fetchAll());
+            Response::json(Auth::camelize($stmt->fetchAll()));
+            return;
         }
 
         if (in_array($user['role'], ['admin', 'hr'])) {
             $stmt = $db->query('SELECT * FROM leave_requests ORDER BY created_at DESC');
-            Response::json($stmt->fetchAll());
+            Response::json(Auth::camelize($stmt->fetchAll()));
+            return;
         }
 
         Response::error('Missing query parameters or insufficient permissions');
@@ -66,7 +69,7 @@ class LeaveController {
             error_log('[LeaveController] Notification error: ' . $e->getMessage());
         }
 
-        Response::json($row, 201);
+        Response::json(Auth::camelize($row), 201);
     }
 
     public function update(array $user, int $id, array $body): void {
@@ -95,7 +98,7 @@ class LeaveController {
             }
         }
 
-        if ($body['status'] === 'approved' || $body['status'] === 'rejected') {
+        if (isset($body['status']) && ($body['status'] === 'approved' || $body['status'] === 'rejected')) {
             $sets[]   = 'approved_by_id = ?';
             $values[] = $user['id'];
         }
@@ -115,11 +118,11 @@ class LeaveController {
                 : "Your leave request from {$updated['start_date']} to {$updated['end_date']} has been rejected.";
             $notifType   = $body['status'] === 'approved' ? 'leave_approved' : 'leave_rejected';
             try {
-                $this->notify($db, $updated['user_id'], $notifType, $statusTitle, $statusMsg, $id, $user['id']);
+                $this->notify($db, (int)$updated['user_id'], $notifType, $statusTitle, $statusMsg, $id, $user['id']);
             } catch (Throwable $e) {}
         }
 
-        Response::json($updated);
+        Response::json(Auth::camelize($updated));
     }
 
     public function delete(array $user, int $id): void {
@@ -137,8 +140,6 @@ class LeaveController {
         $db->prepare('DELETE FROM leave_requests WHERE id=?')->execute([$id]);
         Response::noContent();
     }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
 
     private function getById(PDO $db, int $id): ?array {
         $stmt = $db->prepare('SELECT * FROM leave_requests WHERE id=? LIMIT 1');

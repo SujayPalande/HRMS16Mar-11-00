@@ -42,20 +42,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [search] = useLocation();
-  const queryParams = new URLSearchParams(search.split('?')[1] || '');
-  const initialTab = queryParams.get('tab') || "personal";
+  const initialTab = window.location.search.includes('tab=') 
+    ? new URLSearchParams(window.location.search).get('tab') || "personal"
+    : "personal";
   
-  const employeeId = parseInt(id || "0");
+  // Safely parse ID, if invalid number it will be NaN
+  const employeeId = parseInt(id || "");
+  const isValidId = !isNaN(employeeId) && employeeId > 0;
+  
   const [activeTab, setActiveTab] = useState(initialTab);
   
   // State for attendance month selection
   const [selectedAttendanceMonth, setSelectedAttendanceMonth] = useState(format(new Date(), 'yyyy-MM'));
   
   // Fetch employee data
-  const { data: employee, isLoading: isLoadingEmployee } = useQuery<User>({
+  const { data: employee, isLoading: isLoadingEmployee, isError: isEmployeeError } = useQuery<User>({
     queryKey: [`/api/employees/${employeeId}`],
-    enabled: !!employeeId,
+    enabled: isValidId,
+    retry: 1
   });
 
   // Fetch departments data
@@ -63,13 +67,13 @@ export default function EmployeeDetailPage() {
     queryKey: ["/api/departments"],
   });
 
-  // Fetch employee's leave requests (server-side filtered for security)
+  // Fetch employee's leave requests
   const { data: leaveRequests = [] } = useQuery<LeaveRequest[]>({
     queryKey: [`/api/leave-requests?userId=${employeeId}`],
-    enabled: !!employeeId,
+    enabled: isValidId,
   });
 
-  // Fetch employee's attendance records for selected month (server-side filtered)
+  // Fetch employee's attendance records for selected month
   const { data: attendanceRecords = [] } = useQuery<Attendance[]>({
     queryKey: ['/api/attendance', employeeId, selectedAttendanceMonth],
     queryFn: async () => {
@@ -85,10 +89,10 @@ export default function EmployeeDetailPage() {
         return dateB - dateA;
       });
     },
-    enabled: !!employeeId,
+    enabled: isValidId,
   });
 
-  // Fetch all available months for the dropdown (server-side filtered by user)
+  // Fetch all available months for the dropdown
   const { data: allUserAttendance = [] } = useQuery<Attendance[]>({
     queryKey: ['/api/attendance', employeeId],
     queryFn: async () => {
@@ -98,7 +102,7 @@ export default function EmployeeDetailPage() {
       }
       return response.json();
     },
-    enabled: !!employeeId,
+    enabled: isValidId,
   });
 
   // Calculate monthly attendance statistics
@@ -173,7 +177,7 @@ export default function EmployeeDetailPage() {
       }
       return response.json();
     },
-    enabled: !!employeeId,
+    enabled: isValidId,
   });
 
   // Leave stats for dashboard
@@ -272,7 +276,8 @@ export default function EmployeeDetailPage() {
         return dateB - dateA;
       });
     },
-    enabled: !!employeeId,
+    enabled: isValidId,
+    retry: 1
   });
 
   // Calculate salary breakdown using the new formula
@@ -474,7 +479,7 @@ export default function EmployeeDetailPage() {
 
   const monthlyPaymentHistory = getMonthlyPaymentHistory();
 
-  if (isLoadingEmployee) {
+  if (isLoadingEmployee && isValidId) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center p-8">
@@ -487,14 +492,14 @@ export default function EmployeeDetailPage() {
     );
   }
 
-  if (!employee) {
+  if (!employee || !isValidId || isEmployeeError) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
             <UserIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Employee Not Found</h2>
-            <p className="text-gray-600 mb-4">The employee you're looking for doesn't exist or has been removed.</p>
+            <p className="text-gray-600 mb-4">The employee you're looking for doesn't exist, has been removed, or there was an error.</p>
             <Link href="/payroll">
               <Button variant="outline">
                 <ArrowLeft className="h-4 w-4 mr-2" />

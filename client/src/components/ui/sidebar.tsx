@@ -291,7 +291,9 @@ export function Sidebar({ className }: SidebarProps) {
   };
 
   const getInitials = (user: User) => {
-    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`;
+    const f = user?.firstName?.charAt(0) ?? '';
+    const l = user?.lastName?.charAt(0) ?? '';
+    return `${f}${l}`.toUpperCase() || '?';
   };
 
   const isSectionActive = (section: NavSection) => {

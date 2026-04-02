@@ -1,0 +1,11 @@
+
+> rest-express@1.0.0 dev
+> cross-env NODE_ENV=development tsx server/index.ts
+
+[1G[0KWarning: SENDGRID_API_KEY not configured. Email functionality will be disabled.
+3:08:51 AM [express] Serving on 0.0.0.0:5000
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+3:10:25 AM [express] GET /api/user 401 in 2ms
+3:10:26 AM [express] GET /api/settings/system 401 in 2ms :: {"message":"Unauthorized"}
