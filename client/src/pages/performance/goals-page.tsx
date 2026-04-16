@@ -10,8 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Target, Plus, TrendingUp, Clock, CheckCircle, AlertCircle, X, Calendar, Users, Edit2, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface Goal {
   id: number;
@@ -26,7 +29,10 @@ interface Goal {
 }
 
 export default function GoalsPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
+  const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'developer';
+  
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -43,13 +49,11 @@ export default function GoalsPage() {
     description: ""
   });
 
-  const [goals, setGoals] = useState<Goal[]>([
-    { id: 1, title: "Increase Sales by 20%", kpi: "Revenue Growth", owner: "Sales Team", progress: 75, dueDate: "Mar 31, 2024", status: "On Track", description: "Increase overall sales revenue by 20% through new customer acquisition and upselling to existing customers.", priority: "high" },
-    { id: 2, title: "Launch New Product Feature", kpi: "Product Delivery", owner: "Engineering", progress: 45, dueDate: "Feb 28, 2024", status: "At Risk", description: "Develop and launch the new dashboard feature with real-time analytics capabilities.", priority: "high" },
-    { id: 3, title: "Improve Customer Satisfaction", kpi: "NPS Score", owner: "Support Team", progress: 90, dueDate: "Jan 31, 2024", status: "Completed", description: "Achieve NPS score of 50+ through improved customer support and faster response times.", priority: "medium" },
-    { id: 4, title: "Reduce Operational Costs", kpi: "Cost Reduction", owner: "Operations", progress: 60, dueDate: "Apr 30, 2024", status: "On Track", description: "Reduce operational costs by 15% through process optimization and automation.", priority: "medium" },
-    { id: 5, title: "Employee Training Program", kpi: "Training Completion", owner: "HR Team", progress: 30, dueDate: "Mar 15, 2024", status: "Behind", description: "Complete mandatory training for all employees on new compliance regulations.", priority: "low" },
-  ]);
+  const { data: apiGoals = [], isLoading } = useQuery<Goal[]>({
+    queryKey: ["/api/goals"],
+  });
+
+  const goals = apiGoals;
 
   const goalStats = [
     { title: "Total Goals", value: goals.length.toString(), icon: <Target className="h-5 w-5" />, color: "bg-teal-50 text-teal-600" },
@@ -77,35 +81,52 @@ export default function GoalsPage() {
     }
   };
 
+  const createMutation = useMutation({
+    mutationFn: async (goal: any) => {
+      const res = await apiRequest("POST", "/api/goals", goal);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
+      toast({ title: "Goal Created", description: "Goal has been added successfully." });
+      setIsAddDialogOpen(false);
+      setNewGoal({ title: "", kpi: "", owner: "", dueDate: "", priority: "medium", description: "" });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (goal: Goal) => {
+      const res = await apiRequest("PUT", `/api/goals/${goal.id}`, goal);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
+      toast({ title: "Goal Updated", description: "Goal has been updated successfully." });
+      setIsEditMode(false);
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/goals/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
+      toast({ title: "Goal Deleted", description: "Goal has been deleted successfully." });
+      setIsViewDialogOpen(false);
+    }
+  });
+
   const handleAddGoal = () => {
     if (!newGoal.title || !newGoal.kpi || !newGoal.owner || !newGoal.dueDate) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields.",
-        variant: "destructive"
-      });
+      toast({ title: "Missing Information", description: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
-
-    const goal: Goal = {
-      id: goals.length + 1,
-      title: newGoal.title,
-      kpi: newGoal.kpi,
-      owner: newGoal.owner,
+    createMutation.mutate({
+      ...newGoal,
       progress: 0,
-      dueDate: new Date(newGoal.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       status: "On Track",
-      description: newGoal.description,
-      priority: newGoal.priority
-    };
-
-    setGoals([...goals, goal]);
-    setIsAddDialogOpen(false);
-    setNewGoal({ title: "", kpi: "", owner: "", dueDate: "", priority: "medium", description: "" });
-    
-    toast({
-      title: "Goal Created",
-      description: `"${goal.title}" has been added successfully.`
+      userId: user?.id
     });
   };
 
@@ -117,34 +138,26 @@ export default function GoalsPage() {
 
   const handleUpdateGoal = () => {
     if (!selectedGoal) return;
-    
-    setGoals(goals.map(g => g.id === selectedGoal.id ? selectedGoal : g));
-    setIsEditMode(false);
-    
-    toast({
-      title: "Goal Updated",
-      description: `"${selectedGoal.title}" has been updated successfully.`
-    });
+    updateMutation.mutate(selectedGoal);
   };
 
   const handleDeleteGoal = (goalId: number) => {
-    const goal = goals.find(g => g.id === goalId);
-    setGoals(goals.filter(g => g.id !== goalId));
-    setIsViewDialogOpen(false);
-    
-    toast({
-      title: "Goal Deleted",
-      description: `"${goal?.title}" has been deleted.`
-    });
+    deleteMutation.mutate(goalId);
   };
 
-  const filteredGoals = goals.filter(goal => {
-    const matchesStatus = filterStatus === "all" || goal.status === filterStatus;
-    const matchesSearch = goal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         goal.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         goal.kpi.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  const filteredGoals = useMemo(() => {
+    return goals.filter(goal => {
+      // Role-based filtering handled by endpoint: Employee sees only their own
+      // We only run local searches here
+
+
+      const matchesStatus = filterStatus === "all" || goal.status === filterStatus;
+      const matchesSearch = goal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           goal.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           goal.kpi.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesStatus && matchesSearch;
+    });
+  }, [goals, filterStatus, searchQuery, isAdminOrHR, user]);
 
   return (
     <AppLayout>
@@ -158,10 +171,12 @@ export default function GoalsPage() {
             <h1 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">Goals & KPIs</h1>
             <p className="text-slate-500 mt-1">Set and track organizational goals and key performance indicators</p>
           </div>
-          <Button className="gap-2" data-testid="button-add-goal" onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add New Goal
-          </Button>
+          {isAdminOrHR && (
+            <Button className="gap-2" data-testid="button-add-goal" onClick={() => setIsAddDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add New Goal
+            </Button>
+          )}
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -505,14 +520,18 @@ export default function GoalsPage() {
               </>
             ) : (
               <>
-                <Button variant="destructive" size="sm" onClick={() => handleDeleteGoal(selectedGoal!.id)} data-testid="button-delete-goal">
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete
-                </Button>
-                <Button variant="outline" onClick={() => setIsEditMode(true)} data-testid="button-edit-goal">
-                  <Edit2 className="h-4 w-4 mr-1" />
-                  Edit
-                </Button>
+                {isAdminOrHR && (
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteGoal(selectedGoal!.id)} data-testid="button-delete-goal">
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                )}
+                {isAdminOrHR && (
+                  <Button variant="outline" onClick={() => setIsEditMode(true)} data-testid="button-edit-goal">
+                    <Edit2 className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
                 <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
               </>
             )}

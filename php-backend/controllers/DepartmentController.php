@@ -5,15 +5,24 @@ require_once __DIR__ . '/../helpers/Response.php';
 
 class DepartmentController {
 
-    public function index(): void {
+    public function index(?array $user = null): void {
         $db   = getDB();
-        $stmt = $db->query(
-            'SELECT d.*, u.name AS unit_name,
+        $sql  = 'SELECT d.*, u.name AS unit_name,
              (SELECT COUNT(*) FROM users WHERE department_id=d.id AND is_active=1) AS employee_count
              FROM departments d
-             LEFT JOIN units u ON u.id=d.unit_id
-             ORDER BY d.name'
-        );
+             LEFT JOIN units u ON u.id=d.unit_id';
+        $params = [];
+
+        // HR/manager: restrict to their own unit
+        $authorizedUnit = Auth::getAuthorizedUnitId($user ?: []);
+        if ($authorizedUnit !== null) {
+            $sql .= ' WHERE d.unit_id = ' . ($authorizedUnit === false ? '-1' : '?');
+            if ($authorizedUnit !== false) $params[] = $authorizedUnit;
+        }
+
+        $sql .= ' ORDER BY d.name';
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
         Response::json(Auth::camelize($stmt->fetchAll()));
     }
 

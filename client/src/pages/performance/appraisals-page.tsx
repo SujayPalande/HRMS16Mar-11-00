@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 
 interface Appraisal {
@@ -44,7 +45,10 @@ const appraisalAchievements = [
 ];
 
 export default function AppraisalsPage() {
+  const { user: authUser } = useAuth();
   const { toast } = useToast();
+  const isAdminOrHR = authUser?.role === 'admin' || authUser?.role === 'hr' || authUser?.role === 'developer';
+  
   const [selectedCycle, setSelectedCycle] = useState("Q1 2026");
   const [isNewCycleOpen, setIsNewCycleOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -174,6 +178,14 @@ export default function AppraisalsPage() {
 
   const filteredAppraisals = useMemo(() => {
     return appraisals.filter(appraisal => {
+      // Role-based filtering: Employee sees only their own
+      if (!isAdminOrHR && authUser?.role !== 'manager') {
+          const userName = `${authUser?.firstName} ${authUser?.lastName}`.toLowerCase();
+          if (appraisal.employee.toLowerCase() !== userName) {
+            return false;
+          }
+      }
+
       const matchesDepartment = filterDepartment === "all" || appraisal.department === filterDepartment;
       const matchesStatus = filterStatus === "all" || appraisal.status === filterStatus;
       const matchesSearch = appraisal.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -183,7 +195,7 @@ export default function AppraisalsPage() {
       const matchesUnit = filterUnit === "all" || (dept && dept.unitId === parseInt(filterUnit));
       return matchesDepartment && matchesStatus && matchesSearch && matchesUnit;
     });
-  }, [appraisals, filterDepartment, filterStatus, searchQuery, filterUnit, employees, deptList]);
+  }, [appraisals, filterDepartment, filterStatus, searchQuery, filterUnit, employees, deptList, isAdminOrHR, authUser]);
 
   return (
     <AppLayout>
@@ -210,10 +222,12 @@ export default function AppraisalsPage() {
                 <SelectItem value="Q1 2023">Q1 2023</SelectItem>
               </SelectContent>
             </Select>
-            <Button className="gap-2" data-testid="button-new-cycle" onClick={() => setIsNewCycleOpen(true)}>
-              <Plus className="h-4 w-4" />
-              New Appraisal Cycle
-            </Button>
+            {isAdminOrHR && (
+              <Button className="gap-2" data-testid="button-new-cycle" onClick={() => setIsNewCycleOpen(true)}>
+                <Plus className="h-4 w-4" />
+                New Appraisal Cycle
+              </Button>
+            )}
           </div>
         </motion.div>
 
@@ -262,10 +276,10 @@ export default function AppraisalsPage() {
                 />
                 <Select value={filterUnit} onValueChange={setFilterUnit}>
                   <SelectTrigger className="w-full sm:w-36" data-testid="select-filter-unit">
-                    <SelectValue placeholder="Unit" />
+                    <SelectValue placeholder={units?.length === 1 ? (units && units[0] ? units[0].name : "Unit") : "Unit"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                     ))}
@@ -490,6 +504,7 @@ export default function AppraisalsPage() {
                         min="1"
                         max="5"
                         step="0.1"
+                        disabled={!isAdminOrHR && authUser?.role !== 'manager' && `${authUser?.firstName} ${authUser?.lastName}` !== selectedAppraisal.employee}
                         value={selectedAppraisal.selfRating || ""}
                         onChange={(e) => setSelectedAppraisal({ ...selectedAppraisal, selfRating: parseFloat(e.target.value) || null })}
                         placeholder="Enter rating"
@@ -503,6 +518,7 @@ export default function AppraisalsPage() {
                         min="1"
                         max="5"
                         step="0.1"
+                        disabled={!isAdminOrHR && authUser?.role !== 'manager'}
                         value={selectedAppraisal.managerRating || ""}
                         onChange={(e) => setSelectedAppraisal({ ...selectedAppraisal, managerRating: parseFloat(e.target.value) || null })}
                         placeholder="Enter rating"

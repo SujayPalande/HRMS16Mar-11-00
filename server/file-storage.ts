@@ -2,12 +2,17 @@ import { promises as fs } from "fs";
 import path from "path";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { 
-  User, InsertUser, Department, InsertDepartment, 
+import {
+  User, InsertUser, Department, InsertDepartment,
   Attendance, InsertAttendance, LeaveRequest, InsertLeaveRequest,
   Holiday, InsertHoliday, Notification, InsertNotification,
   PaymentRecord, InsertPaymentRecord, EmployeeInvitation, InsertEmployeeInvitation,
-  LeaveBalance, Unit, InsertUnit
+  LeaveBalance, Unit, InsertUnit,
+  Certification, InsertCertification,
+  BankMaster, InsertBankMaster, CategoryMaster, InsertCategoryMaster,
+  CompanyMaster, InsertCompanyMaster, CostCenter, InsertCostCenter,
+  DocumentApproval, InsertDocumentApproval, EmployeeDeduction, InsertEmployeeDeduction,
+  Goal, InsertGoal
 } from "@shared/schema";
 import { IStorage } from "./storage";
 import { differenceInMonths, startOfYear, endOfYear, addMonths } from "date-fns";
@@ -24,6 +29,15 @@ interface StorageData {
   notifications: Notification[];
   paymentRecords: PaymentRecord[];
   employeeInvitations: EmployeeInvitation[];
+  certifications: Certification[];
+  bankMasters: BankMaster[];
+  categoryMasters: CategoryMaster[];
+  companyMasters: CompanyMaster[];
+  costCenters: CostCenter[];
+  documentApprovals: DocumentApproval[];
+  employeeDeductions: EmployeeDeduction[];
+  goals: Goal[];
+  systemSettings: any;
   currentUserId: number;
   currentDepartmentId: number;
   currentUnitId: number;
@@ -33,6 +47,14 @@ interface StorageData {
   currentNotificationId: number;
   currentPaymentRecordId: number;
   currentInvitationId: number;
+  currentCertificationId: number;
+  currentBankMasterId: number;
+  currentCategoryMasterId: number;
+  currentCompanyMasterId: number;
+  currentCostCenterId: number;
+  currentDocumentApprovalId: number;
+  currentEmployeeDeductionId: number;
+  currentGoalId: number;
 }
 
 export class FileStorage implements IStorage {
@@ -52,6 +74,15 @@ export class FileStorage implements IStorage {
       notifications: [],
       paymentRecords: [],
       employeeInvitations: [],
+      certifications: [],
+      bankMasters: [],
+      categoryMasters: [],
+      companyMasters: [],
+      costCenters: [],
+      documentApprovals: [],
+      employeeDeductions: [],
+      goals: [],
+      systemSettings: {},
       currentUserId: 1,
       currentDepartmentId: 1,
       currentUnitId: 1,
@@ -61,8 +92,16 @@ export class FileStorage implements IStorage {
       currentNotificationId: 1,
       currentPaymentRecordId: 1,
       currentInvitationId: 1,
+      currentCertificationId: 1,
+      currentBankMasterId: 1,
+      currentCategoryMasterId: 1,
+      currentCompanyMasterId: 1,
+      currentCostCenterId: 1,
+      currentDocumentApprovalId: 1,
+      currentEmployeeDeductionId: 1,
+      currentGoalId: 1,
     };
-    
+
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000 // prune expired entries every 24h
     });
@@ -71,7 +110,7 @@ export class FileStorage implements IStorage {
   async initialize() {
     await this.ensureDataDirectory();
     await this.loadData();
-    
+
     // Initialize with sample data if empty
     if (this.data.departments.length === 0) {
       await this.initializeDefaultData();
@@ -91,32 +130,32 @@ export class FileStorage implements IStorage {
     try {
       const fileContent = await fs.readFile(this.dataFilePath, 'utf-8');
       this.data = JSON.parse(fileContent);
-      
+
       // Convert date strings back to Date objects
       this.data.users = this.data.users.map(user => ({
         ...user,
         joinDate: user.joinDate ? new Date(user.joinDate) : new Date()
       }));
-      
+
       this.data.attendanceRecords = this.data.attendanceRecords.map(record => ({
         ...record,
         checkInTime: record.checkInTime ? new Date(record.checkInTime) : null,
         checkOutTime: record.checkOutTime ? new Date(record.checkOutTime) : null,
         date: record.date ? new Date(record.date) : null,
       }));
-      
+
       this.data.leaveRequests = this.data.leaveRequests.map(request => ({
         ...request,
         startDate: new Date(request.startDate),
         endDate: new Date(request.endDate),
         createdAt: request.createdAt ? new Date(request.createdAt) : new Date()
       }));
-      
+
       this.data.holidayRecords = this.data.holidayRecords.map(holiday => ({
         ...holiday,
         date: new Date(holiday.date)
       }));
-      
+
       // Handle payment records if they exist in the data
       if (this.data.paymentRecords) {
         this.data.paymentRecords = this.data.paymentRecords.map(record => ({
@@ -153,7 +192,7 @@ export class FileStorage implements IStorage {
           ? Math.max(...this.data.units.map(u => u.id)) + 1
           : 1);
       }
-      
+
     } catch (error) {
       // File doesn't exist, start with empty data
       console.log("No existing data file found, starting with empty data");
@@ -167,25 +206,13 @@ export class FileStorage implements IStorage {
 
   private async initializeDefaultData() {
     // Initialize with sample departments
-    await this.createDepartment({ 
-      name: "Human Resources", 
-      description: "Manages employee relations, hiring, and company policies" 
-    });
-    await this.createDepartment({ 
-      name: "Engineering", 
-      description: "Software development and technical operations" 
-    });
-    await this.createDepartment({ 
-      name: "Marketing", 
-      description: "Handles brand awareness and promotional activities" 
-    });
-    await this.createDepartment({ 
-      name: "Finance", 
-      description: "Manages financial planning and accounting" 
-    });
-    
+    await this.createDepartment({ name: "Human Resources", code: "HR", description: "Manages employee relations, hiring, and company policies" });
+    await this.createDepartment({ name: "Engineering", code: "ENG", description: "Software development and technical operations" });
+    await this.createDepartment({ name: "Marketing", code: "MKT", description: "Handles brand awareness and promotional activities" });
+    await this.createDepartment({ name: "Finance", code: "FIN", description: "Manages financial planning and accounting" });
+
     // Initialize with default users (pre-hashed passwords)
-    
+
     // Admin user - Password: admin123
     await this.initializeUser({
       username: "admin",
@@ -200,8 +227,8 @@ export class FileStorage implements IStorage {
       address: "123 Main St, Anytown, USA",
       joinDate: new Date(),
       isActive: true
-    });
-    
+    } as any);
+
     // HR user - Password: hr123
     await this.initializeUser({
       username: "hr",
@@ -216,8 +243,8 @@ export class FileStorage implements IStorage {
       address: "124 Main St, Anytown, USA",
       joinDate: new Date(),
       isActive: true
-    });
-    
+    } as any);
+
     // Manager user - Password: manager123
     await this.initializeUser({
       username: "manager",
@@ -232,8 +259,8 @@ export class FileStorage implements IStorage {
       address: "125 Main St, Anytown, USA",
       joinDate: new Date(),
       isActive: true
-    });
-    
+    } as any);
+
     // Regular employee - Password: employee123
     await this.initializeUser({
       username: "employee",
@@ -248,13 +275,41 @@ export class FileStorage implements IStorage {
       address: "126 Main St, Anytown, USA",
       joinDate: new Date(),
       isActive: true
-    });
+    } as any);
+
+    // Seed 2026 holidays for India
+    const holidays2026 = [
+      { name: "Republic Day", date: new Date("2026-01-26"), description: "Republic Day of India" },
+      { name: "Holi", date: new Date("2026-03-17"), description: "Festival of Colors" },
+      { name: "Good Friday", date: new Date("2026-04-03"), description: "Good Friday" },
+      { name: "Eid ul-Fitr", date: new Date("2026-03-31"), description: "End of Ramadan" },
+      { name: "Dr. Ambedkar Jayanti", date: new Date("2026-04-14"), description: "Birth Anniversary of Dr. B.R. Ambedkar" },
+      { name: "May Day", date: new Date("2026-05-01"), description: "International Workers' Day" },
+      { name: "Independence Day", date: new Date("2026-08-15"), description: "Independence Day of India" },
+      { name: "Ganesh Chaturthi", date: new Date("2026-08-27"), description: "Birthday of Lord Ganesha" },
+      { name: "Mahatma Gandhi Jayanti", date: new Date("2026-10-02"), description: "Birth Anniversary of Mahatma Gandhi" },
+      { name: "Dussehra", date: new Date("2026-10-02"), description: "Victory of Good over Evil" },
+      { name: "Diwali", date: new Date("2026-10-21"), description: "Festival of Lights" },
+      { name: "Guru Nanak Jayanti", date: new Date("2026-11-08"), description: "Birthday of Guru Nanak Dev Ji" },
+      { name: "Christmas", date: new Date("2026-12-25"), description: "Christmas Day" },
+    ];
+    for (const h of holidays2026) {
+      await this.createHoliday(h);
+    }
   }
 
   // Helper method for initializing users with pre-hashed passwords
-  private async initializeUser(user: Omit<User, 'id'>) {
+  private async initializeUser(user: any) {
     const id = this.data.currentUserId++;
-    const newUser: User = { ...user, id };
+    const newUser: User = {
+      employeeId: null, dateOfBirth: null, gender: null, maritalStatus: null, photoUrl: null,
+      workLocation: null, reportingTo: null, uanNumber: null, esicNumber: null, aadhaarCard: null,
+      panCard: null, employmentType: 'permanent', pfApplicable: true, esicApplicable: true, ptApplicable: true,
+      incomeTaxApplicable: false, mlwfApplicable: false, overtimeApplicable: false, bonusApplicable: false,
+      bankName: null, bankAccountNumber: null, bankIFSCCode: null, bankAccountType: null,
+      salary: null, status: 'active', customPermissions: null, documents: null,
+      ...user, id
+    };
     this.data.users.push(newUser);
     await this.saveData();
     return newUser;
@@ -279,11 +334,17 @@ export class FileStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.data.currentUserId++;
-    const user: User = { 
-      ...insertUser, 
-      id, 
+    const user: User = {
+      employeeId: null, dateOfBirth: null, gender: null, maritalStatus: null, photoUrl: null,
+      workLocation: null, reportingTo: null, uanNumber: null, esicNumber: null, aadhaarCard: null,
+      panCard: null, employmentType: 'permanent', pfApplicable: true, esicApplicable: true, ptApplicable: true,
+      incomeTaxApplicable: false, mlwfApplicable: false, overtimeApplicable: false, bonusApplicable: false,
+      bankName: null, bankAccountNumber: null, bankIFSCCode: null, bankAccountType: null,
+      salary: null, status: 'active', customPermissions: null, documents: null, isActive: true,
+      role: 'employee' as const,
+      ...insertUser,
+      id,
       joinDate: insertUser.joinDate || new Date(),
-      isActive: insertUser.isActive ?? true,
       departmentId: insertUser.departmentId ?? null,
       position: insertUser.position ?? null,
       phoneNumber: insertUser.phoneNumber ?? null,
@@ -297,7 +358,7 @@ export class FileStorage implements IStorage {
   async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
     const index = this.data.users.findIndex(u => u.id === id);
     if (index === -1) return undefined;
-    
+
     const updatedUser = { ...this.data.users[index], ...userData };
     this.data.users[index] = updatedUser;
     await this.saveData();
@@ -307,12 +368,12 @@ export class FileStorage implements IStorage {
   async deleteUser(id: number): Promise<boolean> {
     const index = this.data.users.findIndex(u => u.id === id);
     if (index === -1) return false;
-    
+
     this.data.users.splice(index, 1);
     await this.saveData();
     return true;
   }
-  
+
   async getUsersByDepartment(departmentId: number): Promise<User[]> {
     return this.data.users.filter(u => u.departmentId === departmentId);
   }
@@ -332,10 +393,14 @@ export class FileStorage implements IStorage {
 
   async createDepartment(insertDepartment: InsertDepartment): Promise<Department> {
     const id = this.data.currentDepartmentId++;
-    const department: Department = { 
-      ...insertDepartment, 
+    const department: Department = {
+      ...insertDepartment,
       id,
-      description: insertDepartment.description ?? null
+      code: insertDepartment.code ?? 'GEN',
+      manager: insertDepartment.manager ?? null,
+      location: insertDepartment.location ?? null,
+      description: insertDepartment.description ?? null,
+      unitId: null,
     };
     this.data.departments.push(department);
     await this.saveData();
@@ -345,7 +410,7 @@ export class FileStorage implements IStorage {
   async updateDepartment(id: number, departmentData: Partial<Department>): Promise<Department | undefined> {
     const index = this.data.departments.findIndex(d => d.id === id);
     if (index === -1) return undefined;
-    
+
     const updatedDepartment = { ...this.data.departments[index], ...departmentData };
     this.data.departments[index] = updatedDepartment;
     await this.saveData();
@@ -372,7 +437,7 @@ export class FileStorage implements IStorage {
   async deleteDepartment(id: number): Promise<boolean> {
     const index = this.data.departments.findIndex(d => d.id === id);
     if (index === -1) return false;
-    
+
     this.data.departments.splice(index, 1);
     await this.saveData();
     return true;
@@ -400,8 +465,8 @@ export class FileStorage implements IStorage {
 
   async createAttendance(insertAttendance: InsertAttendance): Promise<Attendance> {
     const id = this.data.currentAttendanceId++;
-    const attendance: Attendance = { 
-      ...insertAttendance, 
+    const attendance: Attendance = {
+      ...insertAttendance,
       id,
       date: insertAttendance.date ?? null,
       status: insertAttendance.status ?? 'present',
@@ -417,7 +482,7 @@ export class FileStorage implements IStorage {
   async updateAttendance(id: number, attendanceData: Partial<Attendance>): Promise<Attendance | undefined> {
     const index = this.data.attendanceRecords.findIndex(a => a.id === id);
     if (index === -1) return undefined;
-    
+
     const updatedAttendance = { ...this.data.attendanceRecords[index], ...attendanceData };
     this.data.attendanceRecords[index] = updatedAttendance;
     await this.saveData();
@@ -443,8 +508,8 @@ export class FileStorage implements IStorage {
 
   async createLeaveRequest(insertLeaveRequest: InsertLeaveRequest): Promise<LeaveRequest> {
     const id = this.data.currentLeaveRequestId++;
-    const leaveRequest: LeaveRequest = { 
-      ...insertLeaveRequest, 
+    const leaveRequest: LeaveRequest = {
+      ...insertLeaveRequest,
       id,
       status: insertLeaveRequest.status ?? 'pending',
       reason: insertLeaveRequest.reason ?? null,
@@ -459,7 +524,7 @@ export class FileStorage implements IStorage {
   async updateLeaveRequest(id: number, leaveRequestData: Partial<LeaveRequest>): Promise<LeaveRequest | undefined> {
     const index = this.data.leaveRequests.findIndex(l => l.id === id);
     if (index === -1) return undefined;
-    
+
     const updatedLeaveRequest = { ...this.data.leaveRequests[index], ...leaveRequestData };
     this.data.leaveRequests[index] = updatedLeaveRequest;
     await this.saveData();
@@ -469,7 +534,7 @@ export class FileStorage implements IStorage {
   async deleteLeaveRequest(id: number): Promise<boolean> {
     const index = this.data.leaveRequests.findIndex(l => l.id === id);
     if (index === -1) return false;
-    
+
     this.data.leaveRequests.splice(index, 1);
     await this.saveData();
     return true;
@@ -486,8 +551,8 @@ export class FileStorage implements IStorage {
 
   async createHoliday(insertHoliday: InsertHoliday): Promise<Holiday> {
     const id = this.data.currentHolidayId++;
-    const holiday: Holiday = { 
-      ...insertHoliday, 
+    const holiday: Holiday = {
+      ...insertHoliday,
       id,
       description: insertHoliday.description ?? null
     };
@@ -499,7 +564,7 @@ export class FileStorage implements IStorage {
   async updateHoliday(id: number, holidayData: Partial<Holiday>): Promise<Holiday | undefined> {
     const index = this.data.holidayRecords.findIndex(h => h.id === id);
     if (index === -1) return undefined;
-    
+
     const updatedHoliday = { ...this.data.holidayRecords[index], ...holidayData };
     this.data.holidayRecords[index] = updatedHoliday;
     await this.saveData();
@@ -509,7 +574,7 @@ export class FileStorage implements IStorage {
   async deleteHoliday(id: number): Promise<boolean> {
     const index = this.data.holidayRecords.findIndex(h => h.id === id);
     if (index === -1) return false;
-    
+
     this.data.holidayRecords.splice(index, 1);
     await this.saveData();
     return true;
@@ -558,7 +623,7 @@ export class FileStorage implements IStorage {
   async markNotificationAsRead(id: number): Promise<boolean> {
     const notification = this.data.notifications.find(n => n.id === id);
     if (!notification) return false;
-    
+
     notification.isRead = true;
     await this.saveData();
     return true;
@@ -567,11 +632,11 @@ export class FileStorage implements IStorage {
   async markAllNotificationsAsRead(userId: number): Promise<boolean> {
     const userNotifications = this.data.notifications
       .filter(notification => notification.userId === userId && !notification.isRead);
-    
+
     userNotifications.forEach(notification => {
       notification.isRead = true;
     });
-    
+
     await this.saveData();
     return true;
   }
@@ -579,7 +644,7 @@ export class FileStorage implements IStorage {
   async deleteNotification(id: number): Promise<boolean> {
     const index = this.data.notifications.findIndex(n => n.id === id);
     if (index === -1) return false;
-    
+
     this.data.notifications.splice(index, 1);
     await this.saveData();
     return true;
@@ -608,8 +673,12 @@ export class FileStorage implements IStorage {
       ...paymentRecord,
       id,
       createdAt: new Date(),
+      paymentStatus: paymentRecord.paymentStatus ?? 'pending',
+      paymentDate: paymentRecord.paymentDate ?? null,
+      paymentMode: paymentRecord.paymentMode ?? null,
+      referenceNo: paymentRecord.referenceNo ?? null,
     };
-    
+
     this.data.paymentRecords.push(newPaymentRecord);
     await this.saveData();
     return newPaymentRecord;
@@ -618,7 +687,7 @@ export class FileStorage implements IStorage {
   async updatePaymentRecord(id: number, paymentRecord: Partial<PaymentRecord>): Promise<PaymentRecord | undefined> {
     const index = this.data.paymentRecords.findIndex(pr => pr.id === id);
     if (index === -1) return undefined;
-    
+
     this.data.paymentRecords[index] = { ...this.data.paymentRecords[index], ...paymentRecord };
     await this.saveData();
     return this.data.paymentRecords[index];
@@ -627,10 +696,100 @@ export class FileStorage implements IStorage {
   async deletePaymentRecord(id: number): Promise<boolean> {
     const index = this.data.paymentRecords.findIndex(pr => pr.id === id);
     if (index === -1) return false;
-    
+
     this.data.paymentRecords.splice(index, 1);
     await this.saveData();
     return true;
+  }
+
+  // System settings
+  async getSystemSettings(): Promise<any> {
+    return this.data.systemSettings ?? {};
+  }
+
+  // Bank master methods
+  async getBankMasters(): Promise<BankMaster[]> {
+    return this.data.bankMasters ?? [];
+  }
+  async createBankMaster(bank: InsertBankMaster): Promise<BankMaster> {
+    const id = this.data.currentBankMasterId++;
+    const record: BankMaster = {
+      ...bank,
+      id,
+      address: bank.address ?? null,
+      branchCode: bank.branchCode ?? null,
+      accountNo: bank.accountNo ?? null,
+      ifscCode: bank.ifscCode ?? null,
+      micrCode: bank.micrCode ?? null,
+    };
+    this.data.bankMasters.push(record);
+    await this.saveData();
+    return record;
+  }
+
+  // Category master methods
+  async getCategoryMasters(): Promise<CategoryMaster[]> {
+    return this.data.categoryMasters ?? [];
+  }
+  async createCategoryMaster(category: InsertCategoryMaster): Promise<CategoryMaster> {
+    const id = this.data.currentCategoryMasterId++;
+    const record: CategoryMaster = { ...category, id };
+    this.data.categoryMasters.push(record);
+    await this.saveData();
+    return record;
+  }
+
+  // Company master methods
+  async getCompanyMasters(): Promise<CompanyMaster[]> {
+    return this.data.companyMasters ?? [];
+  }
+  async createCompanyMaster(company: InsertCompanyMaster): Promise<CompanyMaster> {
+    const id = this.data.currentCompanyMasterId++;
+    const record: CompanyMaster = { ...company, id, address: company.address ?? null, state: company.state ?? null, pinCode: company.pinCode ?? null, regdNo: company.regdNo ?? null, pfcCode: company.pfcCode ?? null, esicCode: company.esicCode ?? null, panNo: company.panNo ?? null, tanNo: company.tanNo ?? null, gstNo: company.gstNo ?? null, email: company.email ?? null, natureOfBusiness: company.natureOfBusiness ?? null, esiEmployeeContribution: company.esiEmployeeContribution ?? null, esiEmployerContribution: company.esiEmployerContribution ?? null, pfEmployerContribution: company.pfEmployerContribution ?? null };
+    this.data.companyMasters.push(record);
+    await this.saveData();
+    return record;
+  }
+
+  // Cost center methods
+  async getCostCenters(): Promise<CostCenter[]> {
+    return this.data.costCenters ?? [];
+  }
+  async createCostCenter(costCenter: InsertCostCenter): Promise<CostCenter> {
+    const id = this.data.currentCostCenterId++;
+    const record: CostCenter = { ...costCenter, id };
+    this.data.costCenters.push(record);
+    await this.saveData();
+    return record;
+  }
+
+  // Document approval methods
+  async getDocumentApprovals(): Promise<DocumentApproval[]> {
+    return this.data.documentApprovals ?? [];
+  }
+  async createDocumentApproval(approval: InsertDocumentApproval): Promise<DocumentApproval> {
+    const id = this.data.currentDocumentApprovalId++;
+    const record: DocumentApproval = {
+      ...approval,
+      id,
+      status: approval.status ?? 'pending',
+      remarks: approval.remarks ?? null,
+    };
+    this.data.documentApprovals.push(record);
+    await this.saveData();
+    return record;
+  }
+
+  // Employee deduction methods
+  async getEmployeeDeductions(): Promise<EmployeeDeduction[]> {
+    return this.data.employeeDeductions ?? [];
+  }
+  async createEmployeeDeduction(deduction: InsertEmployeeDeduction): Promise<EmployeeDeduction> {
+    const id = this.data.currentEmployeeDeductionId++;
+    const record: EmployeeDeduction = { ...deduction, id };
+    this.data.employeeDeductions.push(record);
+    await this.saveData();
+    return record;
   }
 
   // Employee invitation methods
@@ -648,8 +807,8 @@ export class FileStorage implements IStorage {
 
   async createEmployeeInvitation(insertInvitation: InsertEmployeeInvitation): Promise<EmployeeInvitation> {
     const id = this.data.currentInvitationId++;
-    const invitation: EmployeeInvitation = { 
-      ...insertInvitation, 
+    const invitation: EmployeeInvitation = {
+      ...insertInvitation,
       id,
       usedAt: null,
       createdAt: new Date()
@@ -662,7 +821,7 @@ export class FileStorage implements IStorage {
   async updateEmployeeInvitation(id: number, invitationData: Partial<EmployeeInvitation>): Promise<EmployeeInvitation | undefined> {
     const index = this.data.employeeInvitations.findIndex(invitation => invitation.id === id);
     if (index === -1) return undefined;
-    
+
     this.data.employeeInvitations[index] = { ...this.data.employeeInvitations[index], ...invitationData };
     await this.saveData();
     return this.data.employeeInvitations[index];
@@ -671,7 +830,7 @@ export class FileStorage implements IStorage {
   async deleteEmployeeInvitation(id: number): Promise<boolean> {
     const index = this.data.employeeInvitations.findIndex(invitation => invitation.id === id);
     if (index === -1) return false;
-    
+
     this.data.employeeInvitations.splice(index, 1);
     await this.saveData();
     return true;
@@ -704,7 +863,7 @@ export class FileStorage implements IStorage {
     const totalTaken = approvedLeaves.reduce((total, request) => {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Only count if the leave was taken on or before the calculation date
       if (startDate <= calculationDate) {
         // Calculate days between start and end date (inclusive)
@@ -720,7 +879,7 @@ export class FileStorage implements IStorage {
     const pendingRequests = pendingLeaves.reduce((total, request) => {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Only count if the leave starts on or before the calculation date
       if (startDate <= calculationDate) {
         const timeDifference = endDate.getTime() - startDate.getTime();
@@ -738,14 +897,14 @@ export class FileStorage implements IStorage {
 
     // Calculate accrued and taken this year
     const currentYearStart = startOfYear(calculationDate);
-    const monthsWorkedThisYear = Math.max(0, differenceInMonths(calculationDate, Math.max(joinDate, currentYearStart)));
+    const monthsWorkedThisYear = Math.max(0, differenceInMonths(calculationDate, joinDate.getTime() > currentYearStart.getTime() ? joinDate : currentYearStart));
     const accruedThisYear = monthsWorkedThisYear * accrualPerMonth;
 
     // Calculate taken this year
     const takenThisYear = approvedLeaves.reduce((total, request) => {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Only count if the leave was taken in the current year
       if (startDate >= currentYearStart && startDate <= calculationDate) {
         const timeDifference = endDate.getTime() - startDate.getTime();
@@ -765,5 +924,119 @@ export class FileStorage implements IStorage {
       accruedThisYear,
       takenThisYear
     };
+  }
+
+  // Certification methods
+  async getCertification(id: number): Promise<Certification | undefined> {
+    return this.data.certifications.find(c => c.id === id);
+  }
+
+  async getCertifications(): Promise<Certification[]> {
+    return this.data.certifications;
+  }
+
+  async getCertificationsByUser(userId: number): Promise<Certification[]> {
+    return this.data.certifications.filter(c => c.userId === userId);
+  }
+
+  async createCertification(insertCertification: InsertCertification): Promise<Certification> {
+    const id = this.data.currentCertificationId++;
+    const certification: Certification = {
+      ...insertCertification,
+      id,
+      createdAt: new Date(),
+      status: insertCertification.status ?? 'Active',
+      credentialId: insertCertification.credentialId ?? null,
+      issueDate: new Date(insertCertification.issueDate),
+      expiryDate: insertCertification.expiryDate ? new Date(insertCertification.expiryDate) : null
+    };
+    this.data.certifications.push(certification);
+    await this.saveData();
+    return certification;
+  }
+
+  async updateCertification(id: number, certificationData: Partial<Certification>): Promise<Certification | undefined> {
+    const index = this.data.certifications.findIndex(c => c.id === id);
+    if (index === -1) return undefined;
+
+    const updated = {
+      ...this.data.certifications[index],
+      ...certificationData,
+      issueDate: certificationData.issueDate ? new Date(certificationData.issueDate) : this.data.certifications[index].issueDate,
+      expiryDate: certificationData.expiryDate !== undefined ? (certificationData.expiryDate ? new Date(certificationData.expiryDate) : null) : this.data.certifications[index].expiryDate,
+    };
+    this.data.certifications[index] = updated;
+    await this.saveData();
+    return updated;
+  }
+
+  async deleteCertification(id: number): Promise<boolean> {
+    const index = this.data.certifications.findIndex(c => c.id === id);
+    if (index === -1) return false;
+
+    this.data.certifications.splice(index, 1);
+    await this.saveData();
+    return true;
+  }
+
+  // Goals methods
+  async getGoals(): Promise<Goal[]> {
+    return this.data.goals || [];
+  }
+
+  async getGoalsByUser(userId: number): Promise<Goal[]> {
+    return (this.data.goals || []).filter(g => g.userId === userId);
+  }
+
+  async getGoal(id: number): Promise<Goal | undefined> {
+    return (this.data.goals || []).find(g => g.id === id);
+  }
+
+  async createGoal(goal: InsertGoal): Promise<Goal> {
+    if (!this.data.goals) this.data.goals = [];
+    if (!this.data.currentGoalId) this.data.currentGoalId = 1;
+    const id = this.data.currentGoalId++;
+    const newGoal: Goal = {
+      id,
+      title: goal.title,
+      kpi: goal.kpi,
+      owner: goal.owner,
+      progress: goal.progress ?? 0,
+      dueDate: goal.dueDate instanceof Date ? goal.dueDate : new Date(goal.dueDate),
+      status: goal.status ?? 'On Track',
+      description: goal.description ?? null,
+      priority: goal.priority ?? 'medium',
+      userId: goal.userId,
+      createdAt: new Date(),
+    };
+    this.data.goals.push(newGoal);
+    await this.saveData();
+    return newGoal;
+  }
+
+  async updateGoal(id: number, goalData: Partial<Goal>): Promise<Goal | undefined> {
+    if (!this.data.goals) return undefined;
+    const index = this.data.goals.findIndex(g => g.id === id);
+    if (index === -1) return undefined;
+    const updated = { ...this.data.goals[index], ...goalData };
+    this.data.goals[index] = updated;
+    await this.saveData();
+    return updated;
+  }
+
+  async deleteGoal(id: number): Promise<boolean> {
+    if (!this.data.goals) return false;
+    const index = this.data.goals.findIndex(g => g.id === id);
+    if (index === -1) return false;
+    this.data.goals.splice(index, 1);
+    await this.saveData();
+    return true;
+  }
+
+  // System settings methods
+  async updateSystemSettings(settings: any): Promise<any> {
+    this.data.systemSettings = { ...this.data.systemSettings, ...settings };
+    await this.saveData();
+    return this.data.systemSettings;
   }
 }

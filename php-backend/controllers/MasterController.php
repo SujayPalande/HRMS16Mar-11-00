@@ -6,9 +6,27 @@ class MasterController {
 
     // ── Units ─────────────────────────────────────────────────────────────────
 
-    public function getUnits(): void {
+    public function getUnits(array $user): void {
         $db = getDB();
-        Response::json(Auth::camelize($db->query('SELECT * FROM units ORDER BY name')->fetchAll()));
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        
+        $sql = 'SELECT * FROM units';
+        $params = [];
+        
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) {
+                // If user is restricted but has no unit, they see nothing
+                $sql .= ' WHERE id = 0'; 
+            } else {
+                $sql .= ' WHERE id = ?';
+                $params[] = $authorizedUnit;
+            }
+        }
+        
+        $sql .= ' ORDER BY name';
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        Response::json(Auth::camelize($stmt->fetchAll()));
     }
 
     public function createUnit(array $body): void {

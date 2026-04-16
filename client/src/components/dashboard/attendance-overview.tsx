@@ -72,12 +72,19 @@ export function AttendanceOverview() {
     const filtered = attendanceData.filter(record => record.checkInTime && record.status === 'present');
     if (filtered.length === 0) return "N/A";
     
+    let validCount = 0;
     const totalMs = filtered.reduce((acc, record) => {
-      return acc + new Date(record.checkInTime!).getTime();
+      try {
+        const t = new Date(record.checkInTime!).getTime();
+        if (isNaN(t)) return acc;
+        validCount++;
+        return acc + t;
+      } catch { return acc; }
     }, 0);
     
-    const avgMs = totalMs / filtered.length;
-    return format(new Date(avgMs), 'hh:mm a');
+    if (validCount === 0) return "N/A";
+    const avgMs = totalMs / validCount;
+    try { return format(new Date(avgMs), 'hh:mm a'); } catch { return "N/A"; }
   };
   
   // Calculate average check-out time  
@@ -85,12 +92,19 @@ export function AttendanceOverview() {
     const filtered = attendanceData.filter(record => record.checkOutTime && record.status === 'present');
     if (filtered.length === 0) return "N/A";
     
+    let validCount = 0;
     const totalMs = filtered.reduce((acc, record) => {
-      return acc + new Date(record.checkOutTime!).getTime();
+      try {
+        const t = new Date(record.checkOutTime!).getTime();
+        if (isNaN(t)) return acc;
+        validCount++;
+        return acc + t;
+      } catch { return acc; }
     }, 0);
     
-    const avgMs = totalMs / filtered.length;
-    return format(new Date(avgMs), 'hh:mm a');
+    if (validCount === 0) return "N/A";
+    const avgMs = totalMs / validCount;
+    try { return format(new Date(avgMs), 'hh:mm a'); } catch { return "N/A"; }
   };
   
   const avgCheckIn = calculateAvgCheckIn();

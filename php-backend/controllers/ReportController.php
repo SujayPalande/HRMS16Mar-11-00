@@ -14,7 +14,7 @@ class ReportController {
         if (!$startDate || !$endDate) Response::error('startDate and endDate are required');
 
         $db     = getDB();
-        $users  = $this->getUsers($db, $deptId, $unitId);
+        $users  = $this->getUsers($user, $db, $deptId, $unitId);
         $result = [];
 
         foreach ($users as $u) {
@@ -49,7 +49,7 @@ class ReportController {
         if (!$startDate || !$endDate) Response::error('startDate and endDate are required');
 
         $db     = getDB();
-        $users  = $this->getUsers($db, $deptId, $unitId);
+        $users  = $this->getUsers($user, $db, $deptId, $unitId);
         $result = [];
 
         foreach ($users as $u) {
@@ -78,12 +78,28 @@ class ReportController {
         Response::json($result);
     }
 
-    private function getUsers(PDO $db, ?int $deptId, ?int $unitId = null): array {
+    private function getUsers(array $currentUser, PDO $db, ?int $deptId, ?int $unitId = null): array {
+        $authorizedUnit = Auth::getAuthorizedUnitId($currentUser);
+        
+        // Enforce unit restriction
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) return [];
+            $unitId = $authorizedUnit;
+        }
+
         if ($deptId) {
-            $stmt = $db->prepare("SELECT u.* FROM users u WHERE u.department_id=? AND u.role!='developer' AND u.is_active=1 ORDER BY u.first_name");
-            $stmt->execute([$deptId]);
+            $sql = "SELECT u.* FROM users u 
+                    LEFT JOIN departments d ON d.id = u.department_id 
+                    WHERE u.department_id=? AND u.role!='developer' AND u.is_active=1";
+            if ($unitId) {
+                $sql .= " AND d.unit_id=?";
+                $stmt = $db->prepare($sql . " ORDER BY u.first_name");
+                $stmt->execute([$deptId, $unitId]);
+            } else {
+                $stmt = $db->prepare($sql . " ORDER BY u.first_name");
+                $stmt->execute([$deptId]);
+            }
         } elseif ($unitId) {
-            // Filter by unit via department join
             $stmt = $db->prepare("
                 SELECT u.* FROM users u
                 JOIN departments d ON d.id = u.department_id

@@ -714,10 +714,10 @@ export default function AttendancePage() {
                       <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                         <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                           <SelectTrigger className="w-full sm:w-44 h-11 bg-slate-50 border-slate-200 rounded-xl font-medium" data-testid="select-unit-filter-attendance">
-                            <SelectValue placeholder="All Units" />
+                            <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All Units</SelectItem>
+                            {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                             {units.map(u => (
                               <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
                             ))}

@@ -714,10 +714,10 @@ export default function LeaveReportPage() {
             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Unit</label>
             <Select value={selectedUnit} onValueChange={(val) => { setSelectedUnit(val); setSelectedDept("all"); }}>
               <SelectTrigger className="w-40 h-9 shadow-sm" data-testid="select-unit">
-                <SelectValue placeholder="All Units" />
+                <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Units</SelectItem>
+                {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                 {units.map(u => (
                   <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                 ))}

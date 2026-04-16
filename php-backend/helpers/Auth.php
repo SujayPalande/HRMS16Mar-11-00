@@ -118,6 +118,35 @@ class Auth {
     }
 
     /**
+     * Get the unit ID the user is authorized to manage/view.
+     * Returns null if they can see everything (admin/developer).
+     * Returns false if they are restricted but not assigned to any unit.
+     */
+    public static function getAuthorizedUnitId(array $user): int|null|false {
+        $role = $user['role'] ?? '';
+        if (in_array($role, ['admin', 'developer'], true)) {
+            return null;
+        }
+
+        // Only HR and Managers have unit-wide access. Employees only have self-access.
+        if (!in_array($role, ['hr', 'manager'], true)) {
+            return false;
+        }
+
+        $deptId = $user['departmentId'] ?? ($user['department_id'] ?? null);
+        if (!$deptId) {
+            return false;
+        }
+
+        $db = getDB();
+        $stmt = $db->prepare('SELECT unit_id FROM departments WHERE id=? LIMIT 1');
+        $stmt->execute([$deptId]);
+        $row = $stmt->fetch();
+        
+        return ($row && $row['unit_id']) ? (int)$row['unit_id'] : false;
+    }
+
+    /**
      * Map all snake_case keys in an array (or list of arrays) to camelCase.
      */
     public static function camelize(array $data): array {

@@ -10,10 +10,28 @@ class EmployeeController {
         $db   = getDB();
         $sql  = 'SELECT u.*, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id=u.department_id';
         $params = [];
+        $where = [];
 
         if ($user['role'] !== 'developer') {
-            $sql .= ' WHERE u.role != ?';
+            $where[] = "u.role != ?";
             $params[] = 'developer';
+        }
+
+        // HR and manager: scope to their own unit only
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) {
+                // Restricted role but no unit assigned? Can only see self (optional fallback)
+                $where[] = "u.id = ?";
+                $params[] = $user['id'];
+            } else {
+                $where[] = "d.unit_id = ?";
+                $params[] = $authorizedUnit;
+            }
+        }
+
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
         }
         $sql .= ' ORDER BY u.id';
 

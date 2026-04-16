@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { hasPermission } from "@/lib/permissions";
+import { Redirect } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
@@ -7,14 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { EmployeeInvitationForm } from "@/components/employees/employee-invitation-form";
 import { MultiStepEmployeeForm } from "@/components/employees/multi-step-employee-form";
-import { 
-  Plus, 
-  Trash2, 
-  Eye, 
-  Mail, 
-  Phone, 
-  Building2, 
-  User as UserIcon, 
+import {
+  Plus,
+  Trash2,
+  Eye,
+  Mail,
+  Phone,
+  Building2,
+  User as UserIcon,
   Search,
   Users,
   TrendingUp,
@@ -41,21 +44,26 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function EmployeesPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  if (!hasPermission(user, "employees.view")) {
+    return <Redirect to="/" />;
+  }
+
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isAddFormVisible, setIsAddFormVisible] = useState(false);
   const [addMethod, setAddMethod] = useState<'invitation' | 'manual'>('invitation');
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [selectedUnit, setSelectedUnit] = useState("all");
-  
+
   // Fetch employees data
   const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<User[]>({
     queryKey: ["/api/employees"],
   });
-  
+
   // Fetch departments for the form
   const { data: departments = [] } = useQuery<Department[]>({
     queryKey: ["/api/departments"],
@@ -65,7 +73,7 @@ export default function EmployeesPage() {
   const { data: units = [] } = useQuery<Unit[]>({
     queryKey: ["/api/masters/units"],
   });
-  
+
   // Delete employee mutation
   const deleteEmployeeMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -86,7 +94,7 @@ export default function EmployeesPage() {
       });
     },
   });
-  
+
   const handleEdit = (employee: User) => {
     setSelectedEmployee(employee);
     setIsEditOpen(true);
@@ -96,7 +104,7 @@ export default function EmployeesPage() {
     setSelectedEmployee(employee);
     setIsViewOpen(true);
   };
-  
+
   const filteredEmployees = employees.filter((employee) => {
     const searchLower = searchQuery.toLowerCase();
     const dept = departments.find(d => d.id === employee.departmentId);
@@ -111,10 +119,9 @@ export default function EmployeesPage() {
     return matchesUnit && matchesSearch;
   });
 
-  const shouldForceTableView = filteredEmployees.length > 20;
   const totalEmployees = employees.length;
   const activeEmployees = employees.filter(emp => emp.isActive).length;
-  
+
   const roleStats = {
     admin: employees.filter(emp => emp.role === 'admin').length,
     hr: employees.filter(emp => emp.role === 'hr').length,
@@ -143,7 +150,7 @@ export default function EmployeesPage() {
   const EmployeeCard = ({ employee, index }: { employee: User; index: number }) => {
     const department = departments.find(d => d.id === employee.departmentId);
     const isPending = employee.status === 'invited';
-    
+
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -152,8 +159,8 @@ export default function EmployeesPage() {
       >
         <Card className={cn(
           "group border-2 shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden relative",
-          isPending 
-            ? "border-orange-300 hover:border-orange-400 bg-gradient-to-br from-orange-50 via-orange-100/50 to-white" 
+          isPending
+            ? "border-orange-300 hover:border-orange-400 bg-gradient-to-br from-orange-50 via-orange-100/50 to-white"
             : "border-slate-200 hover:border-teal-300 bg-gradient-to-br from-white via-slate-50 to-white"
         )}>
           <CardContent className="p-6 relative z-10">
@@ -182,7 +189,7 @@ export default function EmployeesPage() {
                   </Button>
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <div className="flex items-center space-x-2 text-sm text-slate-600">
                   <Mail className="w-4 h-4 text-teal-500" />
@@ -195,15 +202,15 @@ export default function EmployeesPage() {
                   </div>
                 )}
               </div>
-              
+
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <div className="flex items-center space-x-2">
                   <Badge variant={getRoleBadgeVariant(employee.role)} className="text-xs font-medium">
                     {getRoleIcon(employee.role)}
                     <span className="ml-1 capitalize">{employee.role}</span>
                   </Badge>
-                  <Badge 
-                    variant={isPending ? "secondary" : employee.isActive ? "default" : "destructive"} 
+                  <Badge
+                    variant={isPending ? "secondary" : employee.isActive ? "default" : "destructive"}
                     className={cn("text-xs", isPending && "bg-orange-100 text-orange-800 border-orange-200")}
                   >
                     {isPending ? "Pending" : employee.isActive ? "Active" : "Inactive"}
@@ -237,7 +244,7 @@ export default function EmployeesPage() {
                 <p className="text-slate-600 text-lg">Manage your workforce and team members</p>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <div className="bg-white rounded-xl px-4 py-3 shadow-md border border-slate-200">
                 <div className="flex items-center space-x-2">
@@ -248,14 +255,16 @@ export default function EmployeesPage() {
                   </div>
                 </div>
               </div>
-              
-              <Button 
-                onClick={() => setIsAddFormVisible(!isAddFormVisible)}
-                className="bg-gradient-to-r from-teal-600 via-teal-600 to-emerald-600 hover:from-teal-700 hover:via-teal-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-200 px-6 py-3 h-auto text-white font-semibold"
-              >
-                {isAddFormVisible ? <X className="h-5 w-5 mr-2" /> : <Plus className="h-5 w-5 mr-2" />}
-                {isAddFormVisible ? "Cancel Addition" : "Add New Employee"}
-              </Button>
+
+              {(user?.role === 'admin' || user?.role === 'hr' || user?.role === 'developer') && (
+                <Button
+                  onClick={() => setIsAddFormVisible(!isAddFormVisible)}
+                  className="bg-gradient-to-r from-teal-600 via-teal-600 to-emerald-600 hover:from-teal-700 hover:via-teal-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-200 px-6 py-3 h-auto text-white font-semibold"
+                >
+                  {isAddFormVisible ? <X className="h-5 w-5 mr-2" /> : <Plus className="h-5 w-5 mr-2" />}
+                  {isAddFormVisible ? "Cancel Addition" : "Add New Employee"}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -276,8 +285,8 @@ export default function EmployeesPage() {
                       onClick={() => setAddMethod('invitation')}
                       className={cn(
                         "flex-1 flex items-center justify-center py-4 px-6 text-sm font-bold transition-all",
-                        addMethod === 'invitation' 
-                          ? "bg-teal-50 text-teal-700 border-b-2 border-teal-600" 
+                        addMethod === 'invitation'
+                          ? "bg-teal-50 text-teal-700 border-b-2 border-teal-600"
                           : "text-slate-500 hover:bg-slate-50"
                       )}
                     >
@@ -288,8 +297,8 @@ export default function EmployeesPage() {
                       onClick={() => setAddMethod('manual')}
                       className={cn(
                         "flex-1 flex items-center justify-center py-4 px-6 text-sm font-bold transition-all",
-                        addMethod === 'manual' 
-                          ? "bg-teal-50 text-teal-700 border-b-2 border-teal-600" 
+                        addMethod === 'manual'
+                          ? "bg-teal-50 text-teal-700 border-b-2 border-teal-600"
                           : "text-slate-500 hover:bg-slate-50"
                       )}
                     >
@@ -304,7 +313,7 @@ export default function EmployeesPage() {
                           <h3 className="text-lg font-bold text-slate-900">Send Invitation Email</h3>
                           <p className="text-sm text-slate-500">The employee will receive an email with their login credentials and onboarding steps.</p>
                         </div>
-                        <EmployeeInvitationForm 
+                        <EmployeeInvitationForm
                           onSuccess={() => {
                             setIsAddFormVisible(false);
                             queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
@@ -313,7 +322,7 @@ export default function EmployeesPage() {
                         />
                       </div>
                     ) : (
-                      <MultiStepEmployeeForm 
+                      <MultiStepEmployeeForm
                         departments={departments}
                         onSuccess={() => {
                           setIsAddFormVisible(false);
@@ -388,10 +397,10 @@ export default function EmployeesPage() {
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Unit</label>
                 <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                   <SelectTrigger className="h-10 w-52 border-2 border-slate-200 focus:border-teal-500" data-testid="select-unit-filter">
-                    <SelectValue placeholder="All Units" />
+                    <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map((u: Unit) => (
                       <SelectItem key={u.id} value={String(u.id)} data-testid={`option-unit-${u.id}`}>
                         {u.name}
@@ -405,26 +414,16 @@ export default function EmployeesPage() {
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Button variant={viewMode === 'grid' ? 'default' : 'outline'} onClick={() => setViewMode('grid')} className="h-10">
-                <Grid3X3 className="w-4 h-4 mr-2" /> Grid
-              </Button>
-              <Button variant={viewMode === 'table' ? 'default' : 'outline'} onClick={() => setViewMode('table')} className="h-10">
-                <List className="w-4 h-4 mr-2" /> Table
-              </Button>
             </div>
           </div>
         </div>
-        
+
         {/* Employee List */}
-        {isLoadingEmployees ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => <Card key={i} className="animate-pulse h-48 border-2 border-slate-200" />)}
-          </div>
-        ) : (viewMode === 'grid' && !shouldForceTableView) ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredEmployees.map((employee, index) => (
-              <EmployeeCard key={employee.id} employee={employee} index={index} />
-            ))}
+        {filteredEmployees.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-slate-300">
+            <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-slate-600">No employees found</h3>
+            <p className="text-slate-400">Try adjusting your filters or search query</p>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-lg overflow-hidden">

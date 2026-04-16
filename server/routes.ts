@@ -2,12 +2,12 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, hashPassword } from "./auth";
-import { 
+import {
   insertUnitSchema,
-  insertDepartmentSchema, 
-  insertAttendanceSchema, 
+  insertDepartmentSchema,
+  insertAttendanceSchema,
   updateAttendanceSchema,
-  insertLeaveRequestSchema, 
+  insertLeaveRequestSchema,
   insertHolidaySchema,
   insertEmployeeInvitationSchema,
   systemSettingsSchema,
@@ -16,7 +16,8 @@ import {
   insertCompanyMasterSchema,
   insertCostCenterSchema,
   insertDocumentApprovalSchema,
-  insertEmployeeDeductionSchema
+  insertEmployeeDeductionSchema,
+  insertCertificationSchema
 } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
@@ -28,41 +29,44 @@ import { sendEmail, generateInvitationEmail, generateAdminInvitationNotification
 // Permission helper functions for role-based authorization
 function getUserPermissions(user: any) {
   const base = {
-    admin: "all", 
-    developer: "all", 
+    admin: "all",
+    developer: "all",
     hr: [
       "employees.view", "employees.create", "employees.edit",
       "departments.view", "departments.create", "departments.edit",
       "attendance.view", "attendance.edit",
       "leave.view", "leave.approve",
       "reports.view", "roles.view",
-      "payroll.view", "payroll.process", "payroll.edit"
+      "payroll.view", "payroll.process", "payroll.edit",
+      "certifications.view", "certifications.edit"
     ],
     manager: [
       "employees.view", "departments.view",
       "attendance.view", "attendance.edit",
       "leave.view", "leave.approve",
-      "reports.view"
+      "reports.view",
+      "certifications.view", "certifications.edit"
     ],
     employee: [
       "attendance.view", "attendance.mark",
       "leave.view", "leave.create",
-      "payroll.view_own"
+      "payroll.view_own",
+      "certifications.view_own"
     ]
   } as const;
-  
-  const defaults = (user?.role === "admin" || user?.role === "developer") 
-    ? "all" 
+
+  const defaults = (user?.role === "admin" || user?.role === "developer")
+    ? "all"
     : (base as any)[user?.role] || [];
-  const merged = defaults === "all" 
-    ? new Set<string>(["all"]) 
+  const merged = defaults === "all"
+    ? new Set<string>(["all"])
     : new Set<string>([...defaults, ...(user?.customPermissions || [])]);
   return merged;
 }
 
-function hasPermission(req: any, permission: string) { 
-  const perms = getUserPermissions(req.user); 
-  return perms.has("all") || perms.has(permission); 
+function hasPermission(req: any, permission: string) {
+  const perms = getUserPermissions(req.user);
+  return perms.has("all") || perms.has(permission);
 }
 
 // Helper function to compute attendance status based on working hours
@@ -70,10 +74,10 @@ function hasPermission(req: any, permission: string) {
 function computeAttendanceStatus(checkInTime: Date | null, checkOutTime: Date | null): 'present' | 'absent' | 'halfday' | 'late' {
   if (!checkInTime) return 'absent';
   if (!checkOutTime) return 'present'; // Still working — counted as present until checkout
-  
+
   const workingMilliseconds = checkOutTime.getTime() - checkInTime.getTime();
   const workingHours = workingMilliseconds / (1000 * 60 * 60); // Convert to hours
-  
+
   if (workingHours >= 8) {
     return 'present';
   } else if (workingHours >= 4) {
@@ -94,7 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/payroll/calculate", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
-      
+
       const { salary, overtimeHours = 0, daysWorked = 25, totalDaysInMonth = 30 } = req.body;
       const settings = await storage.getSystemSettings();
       const salaryComponents = settings?.salaryComponents || {
@@ -104,47 +108,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         esicPercentage: 0.75,
         professionalTax: 200
       };
-      
+
       // Step 1: Gross Salary (Pro-rated based on days worked)
       const gross = (salary / totalDaysInMonth) * daysWorked;
-      
+
       // Step 2: Earnings Breakdown
       const basic = gross * (salaryComponents.basicSalaryPercentage / 100);
       const hra = basic * (salaryComponents.hraPercentage / 100);
-      const da = basic * 0.1; 
-      const conveyance = 0; 
-      const medical = 0; 
+      const da = basic * 0.1;
+      const conveyance = 0;
+      const medical = 0;
       const transAll = basic * 0.16;
       const lta = basic * 0.04;
       const childAll = basic * 0.04;
       const medAll = basic * 0.10;
       const othAll = basic * 0.06;
-      
+
       const otRate = ((basic + da) / 26 / 8) * 2;
       const otAmount = overtimeHours * otRate;
-      
+
       // Special Allowance = Gross - (Sum of other earnings)
       const earningsBeforeSpecial = basic + da + hra + transAll + lta + childAll + medAll + othAll + otAmount;
       const specialAllowance = Math.max(0, gross - earningsBeforeSpecial);
-      
+
       // Statutory Deductions based on updated logic
       const basicLimit = 15000;
       const epfEmployee = Math.min(basic, basicLimit) * 0.12;
       const epfEmployer = Math.min(basic, basicLimit) * 0.13; // Includes Admin charges
-      
+
       const esicEmployee = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
       const esicEmployer = gross <= 21000 ? Math.round(gross * 0.0325) : 0;
-      
+
       const pt = 200;
-      
+
       // MLWF - Half yearly (June & December only) - Employee: 25, Employer: 75
       const currentMonth = new Date().getMonth() + 1;
       const isMlwfMonth = currentMonth === 6 || currentMonth === 12;
       const lwf = isMlwfMonth ? 25 : 0;
-      
+
       const totalDeductions = epfEmployee + esicEmployee + pt + lwf;
       const netSalary = gross - totalDeductions;
-      
+
       res.json({
         earnings: {
           basic, da, hra, conveyance, medical, otAmount, specialAllowance, gross
@@ -302,7 +306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/attendance/bulk", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
-      
+
       const { records } = req.body;
       if (!Array.isArray(records)) {
         return res.status(400).json({ message: "Invalid records format" });
@@ -313,8 +317,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Find employee by ID or Name
           const employees = await storage.getUsers();
-          const emp = employees.find(e => 
-            e.employeeId === record.employeeId || 
+          const emp = employees.find(e =>
+            e.employeeId === record.employeeId ||
             `${e.firstName} ${e.lastName}`.toLowerCase() === record.fullName?.toLowerCase()
           );
 
@@ -358,7 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/leave-requests/bulk", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
-      
+
       const { records } = req.body;
       if (!Array.isArray(records)) {
         return res.status(400).json({ message: "Invalid records format" });
@@ -368,8 +372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const record of records) {
         try {
           const employees = await storage.getUsers();
-          const emp = employees.find(e => 
-            e.employeeId === record.employeeId || 
+          const emp = employees.find(e =>
+            e.employeeId === record.employeeId ||
             `${e.firstName} ${e.lastName}`.toLowerCase() === record.fullName?.toLowerCase()
           );
 
@@ -476,7 +480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ 
+      res.json({
         message: `Processed ${data.length} rows. ${results.success} succeeded, ${results.failed} failed.`,
         details: results
       });
@@ -499,11 +503,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const department = await storage.getDepartment(id);
-      
+
       if (!department) {
         return res.status(404).json({ message: "Department not found" });
       }
-      
+
       res.json(department);
     } catch (error) {
       next(error);
@@ -528,11 +532,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = parseInt(req.params.id);
       const validatedData = insertDepartmentSchema.partial().parse(req.body);
       const department = await storage.updateDepartment(id, validatedData);
-      
+
       if (!department) {
         return res.status(404).json({ message: "Department not found" });
       }
-      
+
       res.json(department);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -546,11 +550,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteDepartment(id);
-      
+
       if (!deleted) {
         return res.status(404).json({ message: "Department not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -565,12 +569,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const users = await storage.getUsers();
-      
+
       // Filter out developer users unless the requesting user is also a developer
-      const filteredUsers = req.user?.role === 'developer' 
-        ? users 
+      const filteredUsers = req.user?.role === 'developer'
+        ? users
         : users.filter(user => user.role !== 'developer');
-      
+
       // Don't expose passwords in response
       const usersWithoutPasswords = filteredUsers.map(({ password, ...user }) => user);
       res.json(usersWithoutPasswords);
@@ -587,7 +591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const id = parseInt(req.params.id);
       const user = await storage.getUser(id);
-      
+
       if (!user) {
         return res.status(404).json({ message: "Employee not found" });
       }
@@ -596,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user.role === 'developer' && req.user?.role !== 'developer') {
         return res.status(404).json({ message: "Employee not found" });
       }
-      
+
       // Don't expose password
       const { password, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
@@ -616,27 +620,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestingUser = req.user;
 
       // Authorization: Allow users to update their own profile, or admin/hr/manager can update any
-      const canUpdate = requestingUser.id === id || 
-                       ['admin', 'hr', 'manager', 'developer'].includes(requestingUser.role);
-      
+      const canUpdate = requestingUser.id === id ||
+        ['admin', 'hr', 'manager', 'developer'].includes(requestingUser.role);
+
       if (!canUpdate) {
         return res.status(403).json({ message: "Access denied. You can only update your own profile or must have admin/HR privileges." });
       }
 
       // Password updates should be handled separately
       const { password, ...updateData } = req.body;
-      
+
       // Log document uploads for debugging
       if (updateData.documents && updateData.documents.length > 0) {
         console.log(`[Employee Update] Saving ${updateData.documents.length} documents for employee ${id}`);
       }
-      
+
       const user = await storage.updateUser(id, updateData);
-      
+
       if (!user) {
         return res.status(404).json({ message: "Employee not found" });
       }
-      
+
       // Don't expose password
       const { password: userPassword, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
@@ -657,27 +661,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestingUser = req.user;
 
       // Authorization: Allow users to update their own profile, or admin/hr/manager can update any
-      const canUpdate = requestingUser.id === id || 
-                       ['admin', 'hr', 'manager', 'developer'].includes(requestingUser.role);
-      
+      const canUpdate = requestingUser.id === id ||
+        ['admin', 'hr', 'manager', 'developer'].includes(requestingUser.role);
+
       if (!canUpdate) {
         return res.status(403).json({ message: "Access denied. You can only update your own profile or must have admin/HR privileges." });
       }
 
       // Password updates should be handled separately
       const { password, ...updateData } = req.body;
-      
+
       // Log document uploads for debugging
       if (updateData.documents && updateData.documents.length > 0) {
         console.log(`[Employee PATCH] Saving ${updateData.documents.length} documents for employee ${id}`);
       }
-      
+
       const user = await storage.updateUser(id, updateData);
-      
+
       if (!user) {
         return res.status(404).json({ message: "Employee not found" });
       }
-      
+
       // Don't expose password
       const { password: userPassword, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
@@ -690,11 +694,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteUser(id);
-      
+
       if (!deleted) {
         return res.status(404).json({ message: "Employee not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -710,8 +714,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (requestingUser?.role !== 'admin' && requestingUser?.role !== 'hr' && requestingUser?.role !== 'developer') {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
-      const allEmployees = await storage.getAllUsers();
-      const activeEmployees = allEmployees.filter(u => u.isActive && u.role !== 'developer');
+      const allEmployees = await storage.getUsers();
+      const activeEmployees = allEmployees.filter((u: any) => u.isActive && u.role !== 'developer');
       const balances: Record<number, any> = {};
       for (const emp of activeEmployees) {
         try {
@@ -739,7 +743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userId = parseInt(req.params.id);
       const requestingUser = req.user;
-      
+
       // Check if the user exists
       const targetUser = await storage.getUser(userId);
       if (!targetUser) {
@@ -752,16 +756,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Authorization logic: Allow users to see their own leave balance or HR/admin/manager to see any
-      const canAccess = requestingUser.id === userId || 
-                       ['hr', 'admin', 'manager'].includes(requestingUser.role);
-      
+      const canAccess = requestingUser.id === userId ||
+        ['hr', 'admin', 'manager'].includes(requestingUser.role);
+
       if (!canAccess) {
         return res.status(403).json({ message: "Access denied. You can only view your own leave balance or must have HR/admin/manager privileges." });
       }
 
       // Calculate leave balance
       const leaveBalance = await storage.calculateLeaveBalance(userId);
-      
+
       res.json(leaveBalance);
     } catch (error) {
       next(error);
@@ -776,7 +780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { currentPassword, newPassword } = req.body;
-      
+
       if (!currentPassword || !newPassword) {
         return res.status(400).json({ message: "Current password and new password are required" });
       }
@@ -788,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if current password is correct using the same logic as authentication
       let isCurrentPasswordValid = false;
-      
+
       // First, check hardcoded credentials (for users still using default passwords)
       if (
         (user.username === 'admin' && currentPassword === 'admin123') ||
@@ -810,7 +814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isCurrentPasswordValid = false;
         }
       }
-      
+
       if (!isCurrentPasswordValid) {
         return res.status(400).json({ message: "Current password is incorrect" });
       }
@@ -838,7 +842,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { userId, role, customPermissions } = req.body;
-      
+
       if (!userId || !role) {
         return res.status(400).json({ message: "userId and role are required" });
       }
@@ -868,15 +872,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const departmentId = parseInt(req.params.departmentId);
       const employees = await storage.getUsersByDepartment(departmentId);
-      
+
       // Filter out developer users unless the requesting user is also a developer
-      const filteredEmployees = req.user?.role === 'developer' 
-        ? employees 
+      const filteredEmployees = req.user?.role === 'developer'
+        ? employees
         : employees.filter(employee => employee.role !== 'developer');
-      
+
       // Don't expose passwords
       const employeesWithoutPasswords = filteredEmployees.map(({ password, ...employee }) => employee);
       res.json(employeesWithoutPasswords);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Holiday routes
+  app.get("/api/holidays", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      const holidays = await storage.getHolidays();
+      res.json(holidays);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/holidays", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!['admin', 'hr', 'developer'].includes(req.user.role)) {
+        return res.status(403).send("Forbidden");
+      }
+      const holiday = await storage.createHoliday(req.body);
+      res.status(201).json(holiday);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/holidays/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!['admin', 'hr', 'developer'].includes(req.user.role)) {
+        return res.status(403).send("Forbidden");
+      }
+      const id = parseInt(req.params.id);
+      const holiday = await storage.updateHoliday(id, req.body);
+      if (!holiday) return res.status(404).send("Holiday not found");
+      res.json(holiday);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/holidays/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!['admin', 'hr', 'developer'].includes(req.user.role)) {
+        return res.status(403).send("Forbidden");
+      }
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteHoliday(id);
+      if (!deleted) return res.status(404).send("Holiday not found");
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Certification routes
+  app.get("/api/certifications", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+
+      const user = req.user as any;
+      let certifications;
+
+      if (hasPermission(req, "certifications.view")) {
+        certifications = await storage.getCertifications();
+      } else if (hasPermission(req, "certifications.view_own")) {
+        certifications = await storage.getCertificationsByUser(user.id);
+      } else {
+        return res.status(403).send("Forbidden");
+      }
+
+      res.json(certifications);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/certifications", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!hasPermission(req, "certifications.edit")) return res.status(403).send("Forbidden");
+
+      const validatedData = insertCertificationSchema.parse(req.body);
+      const certification = await storage.createCertification(validatedData);
+      res.status(201).json(certification);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  app.put("/api/certifications/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!hasPermission(req, "certifications.edit")) return res.status(403).send("Forbidden");
+
+      const id = parseInt(req.params.id);
+      const validatedData = insertCertificationSchema.partial().parse(req.body);
+      const certification = await storage.updateCertification(id, validatedData);
+
+      if (!certification) return res.status(404).send("Certification not found");
+      res.json(certification);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  app.delete("/api/certifications/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+      if (!hasPermission(req, "certifications.edit")) return res.status(403).send("Forbidden");
+
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteCertification(id);
+
+      if (!deleted) return res.status(404).send("Certification not found");
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -895,7 +1025,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { firstName, lastName, email } = req.body;
-      
+
       if (!firstName || !lastName || !email) {
         return res.status(400).json({ message: "First name, last name, and email are required" });
       }
@@ -924,42 +1054,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate and send email
       const emailTemplate = generateInvitationEmail(firstName, lastName, invitationToken);
       emailTemplate.to = email;
-      
+
       const emailSent = await sendEmail(emailTemplate);
-      
+
       // Send admin notification emails
       let adminEmailResults = { sent: 0, failed: 0, totalAdmins: 0 };
-      
+
       try {
         // Get all admin users
         const allUsers = await storage.getUsers();
         const adminUsers = allUsers.filter(user => user.role === 'admin');
         adminEmailResults.totalAdmins = adminUsers.length;
-        
+
         if (adminUsers.length > 0) {
           // Get inviter details
           const inviter = await storage.getUser(req.user.id);
-          
+
           if (inviter) {
             const sentAt = new Date();
             const invitationUrl = `${process.env.REPLIT_DOMAINS || 'http://localhost:5000'}/invitation/${invitationToken}`;
-            
+
             // Send notification to each admin
             for (const admin of adminUsers) {
               try {
                 const adminNotificationTemplate = generateAdminInvitationNotificationEmail(
                   { firstName, lastName, email },
-                  { 
-                    firstName: inviter.firstName, 
-                    lastName: inviter.lastName, 
-                    email: inviter.email, 
-                    role: inviter.role 
+                  {
+                    firstName: inviter.firstName,
+                    lastName: inviter.lastName,
+                    email: inviter.email,
+                    role: inviter.role
                   },
                   { sentAt, expiresAt, invitationUrl },
                   emailSent
                 );
                 adminNotificationTemplate.to = admin.email;
-                
+
                 const adminEmailSent = await sendEmail(adminNotificationTemplate);
                 if (adminEmailSent) {
                   adminEmailResults.sent++;
@@ -976,7 +1106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.warn('Error sending admin notifications:', error);
       }
-      
+
       // Always save the invitation to JSON file, even if email fails
       res.status(201).json({
         message: emailSent ? "Invitation sent successfully" : "Invitation created (email delivery failed - please check SendGrid configuration)",
@@ -1001,22 +1131,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/invitations/:token", async (req, res, next) => {
     try {
       const { token } = req.params;
-      
+
       const invitation = await storage.getEmployeeInvitationByToken(token);
       if (!invitation) {
         return res.status(404).json({ message: "Invitation not found" });
       }
-      
+
       // Check if invitation has expired
       if (new Date() > new Date(invitation.expiresAt)) {
         return res.status(400).json({ message: "Invitation has expired" });
       }
-      
+
       // Check if invitation has already been used
       if (invitation.usedAt) {
         return res.status(400).json({ message: "Invitation has already been used" });
       }
-      
+
       res.json({
         firstName: invitation.firstName,
         lastName: invitation.lastName,
@@ -1033,35 +1163,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { token } = req.params;
       const { firstName, lastName, password } = req.body;
-      
+
       if (!firstName || !lastName || !password) {
         return res.status(400).json({ message: "First name, last name, and password are required" });
       }
-      
+
       const invitation = await storage.getEmployeeInvitationByToken(token);
       if (!invitation) {
         return res.status(404).json({ message: "Invitation not found" });
       }
-      
+
       // Check if invitation has expired
       if (new Date() > new Date(invitation.expiresAt)) {
         return res.status(400).json({ message: "Invitation has expired" });
       }
-      
+
       // Check if invitation has already been used
       if (invitation.usedAt) {
         return res.status(400).json({ message: "Invitation has already been used" });
       }
-      
+
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(invitation.email);
       if (existingUser) {
         return res.status(400).json({ message: "User with this email already exists" });
       }
-      
+
       // Hash the password using the proper hashing function
       const hashedPassword = await hashPassword(password);
-      
+
       // Create the user account with basic profile (status: invited until they complete full profile)
       const newUser = await storage.createUser({
         username: invitation.email,
@@ -1080,25 +1210,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         gender: null,
         photoUrl: null,
         bankAccountNumber: null,
-        bankAccountHolderName: null,
         bankName: null,
         bankIFSCCode: null,
         bankAccountType: null,
         salary: null,
         customPermissions: []
       });
-      
+
       // Mark invitation as used
       await storage.updateEmployeeInvitation(invitation.id, {
         usedAt: new Date()
       });
-      
+
       // Send confirmation email to all active admin users
       const allUsers = await storage.getUsers();
-      const adminUsers = allUsers.filter((user: any) => 
+      const adminUsers = allUsers.filter((user: any) =>
         (user.role === 'hr' || user.role === 'admin') && user.isActive === true
       );
-      
+
       // Get inviter details to include in the email
       let originalInviter = 'System Administrator';
       let inviterRole = 'Admin';
@@ -1106,13 +1235,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const inviterUser = await storage.getUser(invitation.invitedById || 1);
         if (inviterUser) {
           originalInviter = `${inviterUser.firstName} ${inviterUser.lastName}`;
-          inviterRole = inviterUser.role === 'hr' ? 'HR Manager' : 
-                       inviterUser.role === 'admin' ? 'Administrator' : 'Manager';
+          inviterRole = inviterUser.role === 'hr' ? 'HR Manager' :
+            inviterUser.role === 'admin' ? 'Administrator' : 'Manager';
         }
       } catch (error) {
         console.log('Could not find inviter details, using defaults');
       }
-      
+
       // Send professional email notification to all admin users
       if (adminUsers.length > 0) {
         const registrationCompletionEmails = adminUsers.map(async (adminUser: any) => {
@@ -1130,13 +1259,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
             'HR Connect'
           );
-          
+
           // Set the recipient
           emailTemplate.to = adminUser.email;
-          
+
           return sendEmail(emailTemplate);
         });
-        
+
         // Send all emails concurrently
         try {
           await Promise.all(registrationCompletionEmails);
@@ -1146,7 +1275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Don't fail the registration if email fails
         }
       }
-      
+
       res.status(201).json({
         message: "Registration completed successfully",
         user: {
@@ -1172,39 +1301,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { userId, date, month } = req.query;
-      const userRole = req.user.role;
-      const currentUserId = req.user.id;
-      
+      const user = req.user!;
+      const isAdminHRManager = ['admin', 'hr', 'manager'].includes(user.role);
+      const currentUserId = user.id;
+
       // Reject conflicting parameters
       if (date && month) {
         return res.status(400).json({ message: "Cannot specify both 'date' and 'month' parameters. Use one or the other." });
       }
-      
+
       // Authorization logic based on user role
       if (userId) {
         const requestedUserId = parseInt(userId as string);
-        
+
         // Employees can only access their own attendance
-        if (userRole === 'employee' && requestedUserId !== currentUserId) {
+        if (!isAdminHRManager && requestedUserId !== currentUserId) {
           return res.status(403).json({ message: "Access denied. You can only view your own attendance records." });
         }
-        
+
         // Validate month parameter format if provided
         if (month && !/^\d{4}-\d{2}$/.test(month as string)) {
           return res.status(400).json({ message: "Invalid month format. Use YYYY-MM format." });
         }
-        
+
         const records = await storage.getAttendanceByUser(requestedUserId);
-        
+
         // If month parameter is provided, filter by month
         if (month) {
           const [year, monthNum] = (month as string).split('-').map(Number);
-          
+
           // Validate month number
           if (monthNum < 1 || monthNum > 12) {
             return res.status(400).json({ message: "Invalid month number. Must be between 01-12." });
           }
-          
+
           const filteredRecords = records.filter(record => {
             if (!record.date) return false;
             const recordDate = new Date(record.date);
@@ -1212,42 +1342,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           return res.json(filteredRecords);
         }
-        
+
         return res.json(records);
       }
-      
+
       if (date) {
-        // Only admin can query by date for system overview
-        if (userRole !== 'admin') {
-          return res.status(403).json({ message: "Access denied. Only administrators can query attendance by date." });
+        // Only admin/HR/manager can query by date for system overview
+        if (!isAdminHRManager) {
+          return res.status(403).json({ message: "Access denied. Only administrators/HR/managers can query attendance by date." });
         }
-        
+
         // Validate date format
         const dateObj = new Date(date as string);
         if (isNaN(dateObj.getTime())) {
           return res.status(400).json({ message: "Invalid date format." });
         }
-        
+
         const records = await storage.getAttendanceByDate(dateObj);
         return res.json(records);
       }
-      
+
       // Handle month parameter without userId
       if (month) {
         // Validate month parameter format
         if (!/^\d{4}-\d{2}$/.test(month as string)) {
           return res.status(400).json({ message: "Invalid month format. Use YYYY-MM format." });
         }
-        
+
         const [year, monthNum] = (month as string).split('-').map(Number);
-        
+
         // Validate month number
         if (monthNum < 1 || monthNum > 12) {
           return res.status(400).json({ message: "Invalid month number. Must be between 01-12." });
         }
-        
-        if (userRole === 'admin') {
-          // Admin can get all records for a specific month
+
+        if (isAdminHRManager) {
+          // Admin/HR/manager can get all records for a specific month
           const allRecords = await storage.getAllAttendance();
           const filteredRecords = allRecords.filter(record => {
             if (!record.date) return false;
@@ -1256,7 +1386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           return res.json(filteredRecords);
         } else {
-          // Non-admin users get their own records for the specified month
+          // Non-privileged users get their own records for the specified month
           const records = await storage.getAttendanceByUser(currentUserId);
           const filteredRecords = records.filter(record => {
             if (!record.date) return false;
@@ -1266,14 +1396,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json(filteredRecords);
         }
       }
-      
+
       // No parameters provided - return user's own records based on role
-      if (userRole === 'admin') {
-        // Admin can see all records when no filters are specified
+      // No parameters provided - return user's own records based on role
+      if (isAdminHRManager) {
+        // Admin/HR/manager can see all records when no filters are specified
         const allRecords = await storage.getAllAttendance();
         return res.json(allRecords);
       } else {
-        // All other roles (employee, hr, manager) get only their own records
+        // Employees get only their own records
         const records = await storage.getAttendanceByUser(currentUserId);
         return res.json(records);
       }
@@ -1291,21 +1422,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userRole = req.user.role;
       const currentUserId = req.user.id;
-      
+
       console.log("=== ATTENDANCE CREATE DEBUG ===");
       console.log("Raw request body:", JSON.stringify(req.body, null, 2));
       console.log("Body keys:", Object.keys(req.body));
       console.log("Body types:", Object.keys(req.body).map(k => `${k}: ${typeof req.body[k]}`));
       console.log("User role:", userRole, "User ID:", currentUserId);
-      
+
       const validatedData = insertAttendanceSchema.parse(req.body);
       console.log("Validation SUCCESS, validated data:", JSON.stringify(validatedData, null, 2));
-      
+
       // Authorization: Employees can only create attendance for themselves
       if (userRole === 'employee' && validatedData.userId !== currentUserId) {
         return res.status(403).json({ message: "Access denied. You can only create attendance records for yourself." });
       }
-      
+
       // For employees, always override userId to ensure they can only create their own records
       if (userRole === 'employee') {
         validatedData.userId = currentUserId;
@@ -1315,11 +1446,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cin = validatedData.checkInTime ? new Date(validatedData.checkInTime) : null;
       const cout = validatedData.checkOutTime ? new Date(validatedData.checkOutTime) : null;
       validatedData.status = computeAttendanceStatus(cin, cout);
-      
+
       const attendance = await storage.createAttendance(validatedData);
       console.log("Storage create SUCCESS:", JSON.stringify(attendance, null, 2));
       console.log("=== END ATTENDANCE CREATE DEBUG ===");
-      
+
       res.status(201).json(attendance);
     } catch (error) {
       console.log("=== ATTENDANCE CREATE ERROR ===");
@@ -1330,7 +1461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.log("Full error:", error);
       console.log("=== END ATTENDANCE CREATE ERROR ===");
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
@@ -1344,29 +1475,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       // Only admin, HR, and manager can edit attendance records
       if (!['admin', 'hr', 'manager'].includes(req.user.role)) {
         return res.status(403).json({ message: "Insufficient permissions to edit attendance records" });
       }
-      
+
       const id = parseInt(req.params.id);
-      
+
       // Validate the request body
       const validatedData = updateAttendanceSchema.partial().parse(req.body);
-      
+
       // Get the existing record to check for time changes
       const existingRecord = await storage.getAttendance(id);
       if (!existingRecord) {
         return res.status(404).json({ message: "Attendance record not found" });
       }
-      
+
       // Prepare update data
       let updateData = { ...validatedData };
-      
+
       // Check if check-in or check-out times are being updated
       const hasTimeUpdate = updateData.checkInTime !== undefined || updateData.checkOutTime !== undefined;
-      
+
       if (hasTimeUpdate) {
         // Safely normalize existing record times to Date objects
         const normalizeToDate = (time: any): Date | null => {
@@ -1378,30 +1509,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           return null;
         };
-        
+
         // Determine final times after update
-        const finalCheckInTime = updateData.checkInTime 
+        const finalCheckInTime = updateData.checkInTime
           ? normalizeToDate(updateData.checkInTime)
           : normalizeToDate(existingRecord.checkInTime);
-        
-        const finalCheckOutTime = updateData.checkOutTime 
+
+        const finalCheckOutTime = updateData.checkOutTime
           ? normalizeToDate(updateData.checkOutTime)
           : normalizeToDate(existingRecord.checkOutTime);
-        
+
         // Recompute status based on working hours
         const computedStatus = computeAttendanceStatus(finalCheckInTime, finalCheckOutTime);
         updateData.status = computedStatus;
       }
-      
+
       const result = await storage.updateAttendance(id, updateData);
-      
+
       if (!result) {
         return res.status(404).json({ message: "Attendance record not found" });
       }
-      
+
       console.log("Update successful:", result);
       console.log("=== END DEBUG ===");
-      
+
       res.json(result);
     } catch (error) {
       console.log("=== ERROR ===");
@@ -1410,10 +1541,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Error message:", (error as any)?.message);
       console.log("Full error:", error);
       console.log("=== END ERROR ===");
-      
-      return res.status(500).json({ 
-        message: "Internal server error", 
-        error: (error as any)?.message || "Unknown error" 
+
+      return res.status(500).json({
+        message: "Internal server error",
+        error: (error as any)?.message || "Unknown error"
       });
     }
   });
@@ -1423,18 +1554,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       const userId = req.user.id;
       const now = new Date();
-      
+
       // Check if user has already checked in today
       const todayRecords = await storage.getAttendanceByDate(now);
       const userTodayRecord = todayRecords.find(record => record.userId === userId);
-      
+
       if (userTodayRecord && userTodayRecord.checkInTime) {
         return res.status(400).json({ message: "Already checked in today" });
       }
-      
+
       const attendance = await storage.createAttendance({
         userId,
         checkInTime: now,
@@ -1442,7 +1573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: 'present',
         notes: ''
       });
-      
+
       res.status(201).json(attendance);
     } catch (error) {
       next(error);
@@ -1454,30 +1585,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       const userId = req.user.id;
       const now = new Date();
-      
+
       // Find today's check-in record
       const todayRecords = await storage.getAttendanceByDate(now);
       const userTodayRecord = todayRecords.find(record => record.userId === userId);
-      
+
       if (!userTodayRecord) {
         return res.status(404).json({ message: "No check-in record found for today" });
       }
-      
+
       if (userTodayRecord.checkOutTime) {
         return res.status(400).json({ message: "Already checked out today" });
       }
-      
+
       // Calculate status based on working hours
       const status = computeAttendanceStatus(userTodayRecord.checkInTime ? new Date(userTodayRecord.checkInTime) : null, now);
-      
+
       const attendance = await storage.updateAttendance(userTodayRecord.id, {
         checkOutTime: now,
         status: status
       });
-      
+
       res.json(attendance);
     } catch (error) {
       next(error);
@@ -1487,25 +1618,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Leave request routes
   app.get("/api/leave-requests", async (req, res, next) => {
     try {
+      if (!req.isAuthenticated()) return res.status(401).send("Unauthorized");
+
       const { userId, status } = req.query;
-      
+      const user = req.user!;
+      const isAdminOrHR = ['admin', 'hr'].includes(user.role);
+      const isManager = user.role === 'manager';
+
       if (userId) {
-        const requests = await storage.getLeaveRequestsByUser(parseInt(userId as string));
+        const targetId = parseInt(userId as string);
+        // Authorization check: Self or Admin/HR or Manager
+        if (user.id !== targetId && !isAdminOrHR && !isManager) {
+          return res.status(403).json({ message: "Access denied. You can only view your own leave requests." });
+        }
+        const requests = await storage.getLeaveRequestsByUser(targetId);
         return res.json(requests);
       }
-      
+
       if (status === 'pending') {
+        if (!isAdminOrHR && !isManager) {
+          return res.status(403).json({ message: "Access denied. Only HR/Managers can view pending requests." });
+        }
         const requests = await storage.getPendingLeaveRequests();
         return res.json(requests);
       }
-      
+
       // If no query params, return all requests (for admins/HR)
-      if (req.user && (req.user.role === 'admin' || req.user.role === 'hr')) {
+      if (isAdminOrHR || isManager) {
         const requests = await storage.getAllLeaveRequests();
         return res.json(requests);
       }
-      
-      res.status(400).json({ message: "Missing query parameters or insufficient permissions" });
+
+      // Fallback: return own requests
+      const requests = await storage.getLeaveRequestsByUser(user.id);
+      res.json(requests);
     } catch (error) {
       next(error);
     }
@@ -1516,7 +1662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       // Set userId from authenticated user if not specified and convert dates
       const data = {
         ...req.body,
@@ -1524,10 +1670,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startDate: new Date(req.body.startDate),
         endDate: new Date(req.body.endDate)
       };
-      
+
       const validatedData = insertLeaveRequestSchema.parse(data);
       const leaveRequest = await storage.createLeaveRequest(validatedData);
-      
+
       // Create notification for leave request submission
       try {
         await storage.createNotification({
@@ -1538,7 +1684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isRead: false,
           relatedLeaveId: leaveRequest.id
         });
-        
+
         // Notify admins about new leave request
         const adminUsers = await storage.getAdminUsers();
         const employee = await storage.getUser(leaveRequest.userId);
@@ -1556,7 +1702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (notificationError) {
         console.error('Failed to create leave request notification:', notificationError);
       }
-      
+
       res.status(201).json(leaveRequest);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1569,7 +1715,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/leave-requests/:id", async (req, res, next) => {
     try {
       const id = parseInt(req.params.id);
-      
+
       // Convert dates if they exist in the request body
       const data = { ...req.body };
       if (data.startDate) {
@@ -1578,27 +1724,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.endDate) {
         data.endDate = new Date(data.endDate);
       }
-      
+
       // For approvals, set the approver ID
       if (data.status === 'approved' && req.isAuthenticated()) {
         data.approvedById = req.user.id;
       }
-      
+
       const validatedData = insertLeaveRequestSchema.partial().parse(data);
       const leaveRequest = await storage.updateLeaveRequest(id, validatedData);
-      
+
       if (!leaveRequest) {
         return res.status(404).json({ message: "Leave request not found" });
       }
-      
+
       // Create notification for leave status updates
       if (data.status && (data.status === 'approved' || data.status === 'rejected')) {
         try {
           const statusTitle = data.status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected';
-          const statusMessage = data.status === 'approved' 
+          const statusMessage = data.status === 'approved'
             ? `Your leave request from ${new Date(leaveRequest.startDate).toLocaleDateString()} to ${new Date(leaveRequest.endDate).toLocaleDateString()} has been approved.`
             : `Your leave request from ${new Date(leaveRequest.startDate).toLocaleDateString()} to ${new Date(leaveRequest.endDate).toLocaleDateString()} has been rejected.`;
-            
+
           await storage.createNotification({
             userId: leaveRequest.userId,
             type: data.status === 'approved' ? 'leave_approved' : 'leave_rejected',
@@ -1612,7 +1758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Failed to create leave status notification:', notificationError);
         }
       }
-      
+
       res.json(leaveRequest);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1625,37 +1771,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/leave-requests/:id", async (req, res, next) => {
     try {
       const id = parseInt(req.params.id);
-      
+
       // Check if user is authenticated
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       // Get the leave request first to check ownership
       const leaveRequest = await storage.getLeaveRequest(id);
-      
+
       if (!leaveRequest) {
         return res.status(404).json({ message: "Leave request not found" });
       }
-      
+
       // Users can only cancel their own requests, or admins/HR can cancel any
-      if (leaveRequest.userId !== req.user.id && 
-          req.user.role !== 'admin' && 
-          req.user.role !== 'hr') {
+      if (leaveRequest.userId !== req.user.id &&
+        req.user.role !== 'admin' &&
+        req.user.role !== 'hr') {
         return res.status(403).json({ message: "You can only cancel your own leave requests" });
       }
-      
+
       // Only allow cancellation of pending requests
       if (leaveRequest.status !== 'pending') {
         return res.status(400).json({ message: "Only pending leave requests can be canceled" });
       }
-      
+
       const deleted = await storage.deleteLeaveRequest(id);
-      
+
       if (!deleted) {
         return res.status(404).json({ message: "Leave request not found" });
       }
-      
+
       // Create notification for canceled leave request
       try {
         await storage.createNotification({
@@ -1669,7 +1815,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (notificationError) {
         console.error('Failed to create leave cancellation notification:', notificationError);
       }
-      
+
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -1693,7 +1839,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         date: new Date(req.body.date)
       };
-      
+
       const validatedData = insertHolidaySchema.parse(bodyWithDateConversion);
       const holiday = await storage.createHoliday(validatedData);
       res.status(201).json(holiday);
@@ -1708,20 +1854,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/holidays/:id", async (req, res, next) => {
     try {
       const id = parseInt(req.params.id);
-      
+
       // Convert date string to Date object before validation if date is provided
       const bodyWithDateConversion = {
         ...req.body,
         ...(req.body.date && { date: new Date(req.body.date) })
       };
-      
+
       const validatedData = insertHolidaySchema.partial().parse(bodyWithDateConversion);
       const holiday = await storage.updateHoliday(id, validatedData);
-      
+
       if (!holiday) {
         return res.status(404).json({ message: "Holiday not found" });
       }
-      
+
       res.json(holiday);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1735,11 +1881,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteHoliday(id);
-      
+
       if (!deleted) {
         return res.status(404).json({ message: "Holiday not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -1750,24 +1896,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/attendance", async (req, res, next) => {
     try {
       const { startDate, endDate, departmentId } = req.query;
-      
+
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate are required" });
       }
-      
+
       const start = new Date(startDate as string);
       const end = new Date(endDate as string);
-      
+
       // Get all attendance records
       const allUsers = await storage.getUsers();
       const allAttendance = [];
-      
+
       // Filter users by department if specified
       let users = allUsers;
       if (departmentId) {
         users = allUsers.filter(user => user.departmentId === parseInt(departmentId as string));
       }
-      
+
       // Build report data
       for (const user of users) {
         const userAttendance = await storage.getAttendanceByUser(user.id);
@@ -1775,12 +1921,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const recordDate = record.date ? new Date(record.date) : null;
           return recordDate && recordDate >= start && recordDate <= end;
         });
-        
+
         if (filteredAttendance.length > 0) {
           allAttendance.push({
-            user: { 
-              id: user.id, 
-              firstName: user.firstName, 
+            user: {
+              id: user.id,
+              firstName: user.firstName,
               lastName: user.lastName,
               position: user.position,
               departmentId: user.departmentId
@@ -1789,7 +1935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
       res.json(allAttendance);
     } catch (error) {
       next(error);
@@ -1799,45 +1945,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/leave", async (req, res, next) => {
     try {
       const { startDate, endDate, departmentId, status } = req.query;
-      
+
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate are required" });
       }
-      
+
       const start = new Date(startDate as string);
       const end = new Date(endDate as string);
-      
+
       // Get all users
       const allUsers = await storage.getUsers();
       const leaveReport = [];
-      
+
       // Filter users by department if specified
       let users = allUsers;
       if (departmentId) {
         users = allUsers.filter(user => user.departmentId === parseInt(departmentId as string));
       }
-      
+
       // Build report data
       for (const user of users) {
         const userLeaveRequests = await storage.getLeaveRequestsByUser(user.id);
-        
+
         // Filter by date range and status if specified
         let filteredRequests = userLeaveRequests.filter(request => {
           const requestStart = new Date(request.startDate);
           const requestEnd = new Date(request.endDate);
-          return (requestStart >= start && requestStart <= end) || 
-                 (requestEnd >= start && requestEnd <= end);
+          return (requestStart >= start && requestStart <= end) ||
+            (requestEnd >= start && requestEnd <= end);
         });
-        
+
         if (status) {
           filteredRequests = filteredRequests.filter(request => request.status === status);
         }
-        
+
         if (filteredRequests.length > 0) {
           leaveReport.push({
-            user: { 
-              id: user.id, 
-              firstName: user.firstName, 
+            user: {
+              id: user.id,
+              firstName: user.firstName,
               lastName: user.lastName,
               position: user.position,
               departmentId: user.departmentId
@@ -1846,7 +1992,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
       res.json(leaveReport);
     } catch (error) {
       next(error);
@@ -1901,7 +2047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const id = parseInt(req.params.id);
       const success = await storage.markNotificationAsRead(id);
-      
+
       if (!success) {
         return res.status(404).json({ message: "Notification not found" });
       }
@@ -1933,7 +2079,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const id = parseInt(req.params.id);
       const success = await storage.deleteNotification(id);
-      
+
       if (!success) {
         return res.status(404).json({ message: "Notification not found" });
       }
@@ -1952,36 +2098,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { employeeId, month } = req.query;
-      
+
       // Admin/HR can access all payment records
       if (hasPermission(req, "payroll.view")) {
         if (employeeId) {
           const records = await storage.getPaymentRecordsByEmployee(parseInt(employeeId as string));
           return res.json(records);
         }
-        
+
         if (month) {
           const records = await storage.getPaymentRecordsByMonth(month as string);
           return res.json(records);
         }
-        
+
         const records = await storage.getPaymentRecords();
         return res.json(records);
       }
-      
+
       // Employees can only access their own payment records
       if (hasPermission(req, "payroll.view_own")) {
         const records = await storage.getPaymentRecordsByEmployee(req.user!.id);
-        
+
         if (month) {
           // Filter by month on the server side for security
           const filteredRecords = records.filter(record => record.month === month);
           return res.json(filteredRecords);
         }
-        
+
         return res.json(records);
       }
-      
+
       return res.status(403).json({ message: "Forbidden" });
     } catch (error) {
       next(error);
@@ -1993,7 +2139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       if (!hasPermission(req, "payroll.process")) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -2010,14 +2156,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       if (!hasPermission(req, "payroll.process")) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       const id = parseInt(req.params.id);
       const updatedRecord = await storage.updatePaymentRecord(id, req.body);
-      
+
       if (!updatedRecord) {
         return res.status(404).json({ message: "Payment record not found" });
       }
@@ -2033,14 +2179,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
+
       if (!hasPermission(req, "payroll.process")) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       const id = parseInt(req.params.id);
       const success = await storage.deletePaymentRecord(id);
-      
+
       if (!success) {
         return res.status(404).json({ message: "Payment record not found" });
       }
@@ -2138,8 +2284,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate the request body using the system settings schema
       const validationResult = systemSettingsSchema.safeParse(req.body);
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          message: "Invalid settings data", 
+        return res.status(400).json({
+          message: "Invalid settings data",
           errors: validationResult.error.errors.map(err => ({
             field: err.path.join('.'),
             message: err.message
@@ -2166,7 +2312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { firstName, lastName, email, phone, address, department } = req.body;
-      
+
       // Update user profile data
       const updateData: any = {
         firstName,
@@ -2179,7 +2325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (department) updateData.departmentId = parseInt(department);
 
       const updatedUser = await storage.updateUser(req.user.id, updateData);
-      
+
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -2200,7 +2346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { currentPassword, newPassword } = req.body;
-      
+
       if (!currentPassword || !newPassword) {
         return res.status(400).json({ message: "Current password and new password are required" });
       }
@@ -2212,7 +2358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Import password functions from auth
       const { comparePasswords, hashPassword } = await import("./auth");
-      
+
       // Verify current password
       const isValidPassword = await comparePasswords(currentPassword, user.password);
       if (!isValidPassword) {
@@ -2228,7 +2374,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       next(error);
     }
   });
-  
+
+  // ==================== GOALS API ====================
+  app.get("/api/goals", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      const user = req.user as any;
+      if (user.role === 'employee') {
+        const goals = await storage.getGoalsByUser(user.id);
+        return res.json(goals);
+      }
+      const goals = await storage.getGoals();
+      res.json(goals);
+    } catch (error) { next(error); }
+  });
+
+  app.get("/api/goals/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      const goal = await storage.getGoal(parseInt(req.params.id));
+      if (!goal) return res.status(404).json({ message: "Goal not found" });
+      res.json(goal);
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/goals", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      const user = req.user as any;
+      const goalData = { ...req.body, userId: req.body.userId || user.id };
+      if (goalData.dueDate) goalData.dueDate = new Date(goalData.dueDate);
+      const goal = await storage.createGoal(goalData);
+      res.status(201).json(goal);
+    } catch (error) { next(error); }
+  });
+
+  app.put("/api/goals/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      const updateData = { ...req.body };
+      if (updateData.dueDate) updateData.dueDate = new Date(updateData.dueDate);
+      const goal = await storage.updateGoal(parseInt(req.params.id), updateData);
+      if (!goal) return res.status(404).json({ message: "Goal not found" });
+      res.json(goal);
+    } catch (error) { next(error); }
+  });
+
+  app.delete("/api/goals/:id", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+      const deleted = await storage.deleteGoal(parseInt(req.params.id));
+      if (!deleted) return res.status(404).json({ message: "Goal not found" });
+      res.json({ message: "Goal deleted" });
+    } catch (error) { next(error); }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

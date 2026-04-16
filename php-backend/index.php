@@ -102,7 +102,7 @@ function route(string $path, string $method, array $body, array $query): void {
     // ── Departments ─────────────────────────────────────────────────────────
 
     if ($path === '/departments' && $method === 'GET') {
-        Auth::requireAuth(); $loadDept(); (new DepartmentController)->index(); return;
+        $user = Auth::requireAuth(); $loadDept(); (new DepartmentController)->index($user); return;
     }
     if ($path === '/departments' && $method === 'POST') {
         $user = Auth::requireAuth(); Auth::requireRole($user, ['admin','hr','developer']); $loadDept(); (new DepartmentController)->create($body); return;
@@ -273,9 +273,9 @@ function route(string $path, string $method, array $body, array $query): void {
     // ── Masters ─────────────────────────────────────────────────────────────
 
     if (str_starts_with($path, '/masters')) {
-        Auth::requireAuth(); $loadMaster(); $c = new MasterController;
+        $user = Auth::requireAuth(); $loadMaster(); $c = new MasterController;
         match(true) {
-            $path === '/masters/units'               && $method === 'GET'  => $c->getUnits(),
+            $path === '/masters/units'               && $method === 'GET'  => $c->getUnits($user),
             $path === '/masters/units'               && $method === 'POST' => $c->createUnit($body),
             $path === '/masters/banks'               && $method === 'GET'  => $c->getBanks(),
             $path === '/masters/banks'               && $method === 'POST' => $c->createBank($body),

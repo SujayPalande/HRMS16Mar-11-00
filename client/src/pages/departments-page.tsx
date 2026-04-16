@@ -328,10 +328,10 @@ export default function DepartmentsPage() {
             <div className="flex items-center gap-3">
               <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                 <SelectTrigger className="h-9 w-40 border-2 border-slate-200 focus:border-teal-500" data-testid="select-unit-filter-departments">
-                  <SelectValue placeholder="All Units" />
+                  <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Units</SelectItem>
+                  {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                   {units.map(u => (
                     <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
                   ))}

@@ -11,6 +11,7 @@ import { Truck, Plus, MapPin, Calendar, Clock, CheckCircle, Eye, Search, X, File
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
@@ -103,10 +104,18 @@ export default function TravelRequestsPage() {
     }
   };
 
+  const { user } = useAuth();
+  const currentUserRole = user?.role || "employee";
+  const currentUserName = `${user?.firstName} ${user?.lastName}`;
+  const isHROrAdmin = ['hr', 'admin', 'manager', 'developer'].includes(currentUserRole);
+
   const filteredRequests = travelRequests.filter(request => {
+    // Data isolation: employees only see their own requests
+    if (!isHROrAdmin && request.employee !== currentUserName) return false;
+
     const matchesSearch = request.employee.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.purpose.toLowerCase().includes(searchTerm.toLowerCase());
+      request.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      request.purpose.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || request.status.toLowerCase() === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -116,12 +125,12 @@ export default function TravelRequestsPage() {
       toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    
+
     if (new Date(newRequest.endDate) < new Date(newRequest.startDate)) {
       toast({ title: "Error", description: "End date cannot be before start date", variant: "destructive" });
       return;
     }
-    
+
     const request: TravelRequest = {
       id: travelRequests.length + 1,
       employee: newRequest.employee,
@@ -135,7 +144,7 @@ export default function TravelRequestsPage() {
       estimatedBudget: parseFloat(newRequest.estimatedBudget) || 0,
       notes: newRequest.notes
     };
-    
+
     setTravelRequests([request, ...travelRequests]);
     setNewRequest({ employee: "", fromCity: "", toCity: "", purpose: "", startDate: "", endDate: "", travelMode: "", accommodation: "", estimatedBudget: "", notes: "" });
     setIsNewRequestOpen(false);
@@ -245,8 +254,8 @@ export default function TravelRequestsPage() {
               <div className="flex flex-wrap gap-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder="Search requests..." 
+                  <Input
+                    placeholder="Search requests..."
                     className="pl-10 w-64"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -338,64 +347,64 @@ export default function TravelRequestsPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="employee">Employee Name *</Label>
-              <Input 
-                id="employee" 
+              <Input
+                id="employee"
                 placeholder="Enter employee name"
                 value={newRequest.employee}
-                onChange={(e) => setNewRequest({...newRequest, employee: e.target.value})}
+                onChange={(e) => setNewRequest({ ...newRequest, employee: e.target.value })}
                 data-testid="input-employee"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="fromCity">From City *</Label>
-                <Input 
-                  id="fromCity" 
+                <Input
+                  id="fromCity"
                   placeholder="Departure city"
                   value={newRequest.fromCity}
-                  onChange={(e) => setNewRequest({...newRequest, fromCity: e.target.value})}
+                  onChange={(e) => setNewRequest({ ...newRequest, fromCity: e.target.value })}
                   data-testid="input-from-city"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="toCity">To City *</Label>
-                <Input 
-                  id="toCity" 
+                <Input
+                  id="toCity"
                   placeholder="Destination city"
                   value={newRequest.toCity}
-                  onChange={(e) => setNewRequest({...newRequest, toCity: e.target.value})}
+                  onChange={(e) => setNewRequest({ ...newRequest, toCity: e.target.value })}
                   data-testid="input-to-city"
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="purpose">Purpose of Travel *</Label>
-              <Input 
-                id="purpose" 
+              <Input
+                id="purpose"
                 placeholder="e.g., Client Meeting, Training, Conference"
                 value={newRequest.purpose}
-                onChange={(e) => setNewRequest({...newRequest, purpose: e.target.value})}
+                onChange={(e) => setNewRequest({ ...newRequest, purpose: e.target.value })}
                 data-testid="input-purpose"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="startDate">Start Date *</Label>
-                <Input 
-                  id="startDate" 
+                <Input
+                  id="startDate"
                   type="date"
                   value={newRequest.startDate}
-                  onChange={(e) => setNewRequest({...newRequest, startDate: e.target.value})}
+                  onChange={(e) => setNewRequest({ ...newRequest, startDate: e.target.value })}
                   data-testid="input-start-date"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endDate">End Date *</Label>
-                <Input 
-                  id="endDate" 
+                <Input
+                  id="endDate"
                   type="date"
                   value={newRequest.endDate}
-                  onChange={(e) => setNewRequest({...newRequest, endDate: e.target.value})}
+                  onChange={(e) => setNewRequest({ ...newRequest, endDate: e.target.value })}
                   data-testid="input-end-date"
                 />
               </div>
@@ -403,7 +412,7 @@ export default function TravelRequestsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="travelMode">Travel Mode</Label>
-                <Select value={newRequest.travelMode} onValueChange={(v) => setNewRequest({...newRequest, travelMode: v})}>
+                <Select value={newRequest.travelMode} onValueChange={(v) => setNewRequest({ ...newRequest, travelMode: v })}>
                   <SelectTrigger data-testid="select-travel-mode">
                     <SelectValue placeholder="Select mode" />
                   </SelectTrigger>
@@ -417,33 +426,33 @@ export default function TravelRequestsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="estimatedBudget">Estimated Budget (₹)</Label>
-                <Input 
-                  id="estimatedBudget" 
+                <Input
+                  id="estimatedBudget"
                   type="number"
                   placeholder="0.00"
                   value={newRequest.estimatedBudget}
-                  onChange={(e) => setNewRequest({...newRequest, estimatedBudget: e.target.value})}
+                  onChange={(e) => setNewRequest({ ...newRequest, estimatedBudget: e.target.value })}
                   data-testid="input-budget"
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="accommodation">Accommodation Details</Label>
-              <Input 
-                id="accommodation" 
+              <Input
+                id="accommodation"
                 placeholder="Hotel name or type"
                 value={newRequest.accommodation}
-                onChange={(e) => setNewRequest({...newRequest, accommodation: e.target.value})}
+                onChange={(e) => setNewRequest({ ...newRequest, accommodation: e.target.value })}
                 data-testid="input-accommodation"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Additional Notes</Label>
-              <Textarea 
-                id="notes" 
+              <Textarea
+                id="notes"
                 placeholder="Any additional information or special requirements"
                 value={newRequest.notes}
-                onChange={(e) => setNewRequest({...newRequest, notes: e.target.value})}
+                onChange={(e) => setNewRequest({ ...newRequest, notes: e.target.value })}
                 data-testid="input-notes"
               />
             </div>
@@ -554,7 +563,7 @@ export default function TravelRequestsPage() {
             <DialogDescription>Please provide a reason for rejection</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Textarea 
+            <Textarea
               placeholder="Enter reason for rejection..."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}

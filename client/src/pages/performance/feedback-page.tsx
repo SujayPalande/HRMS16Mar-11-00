@@ -13,6 +13,7 @@ import { Award, Plus, Users, MessageSquare, Star, CheckCircle, Clock, Send, Eye,
 import { motion } from "framer-motion";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@shared/schema";
 
@@ -45,7 +46,10 @@ const responseCounts = [8, 5, 3, 0, 7, 4];
 const totalCounts = [10, 5, 12, 6, 8, 6];
 
 export default function FeedbackPage() {
+  const { user: authUser } = useAuth();
   const { toast } = useToast();
+  const isAdminOrHR = authUser?.role === 'admin' || authUser?.role === 'hr' || authUser?.role === 'developer';
+  
   const [isNewReviewOpen, setIsNewReviewOpen] = useState(false);
   const [isViewResultsOpen, setIsViewResultsOpen] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackRequest | null>(null);
@@ -159,6 +163,17 @@ export default function FeedbackPage() {
 
   const filteredFeedback = useMemo(() => {
     return allFeedbackRequests.filter(feedback => {
+      // Role-based filtering: Employee sees only their own or where they are a reviewer
+      if (!isAdminOrHR) {
+        const userName = `${authUser?.firstName} ${authUser?.lastName}`.toLowerCase();
+        const subjectName = feedback.employee.toLowerCase();
+        // Since reviewer names aren't in the object, we assume they can see if it's In Progress/Completed and they are NOT the subject, 
+        // but for safety in this demo, we'll only show if they are the subject or it involves their department.
+        if (subjectName !== userName && !feedback.department.toLowerCase().includes(authUser?.departmentId?.toString() || '')) {
+           return false;
+        }
+      }
+
       const matchesStatus = filterStatus === "all" || feedback.status === filterStatus;
       const matchesSearch = feedback.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            feedback.department.toLowerCase().includes(searchQuery.toLowerCase());
@@ -167,7 +182,7 @@ export default function FeedbackPage() {
       const matchesUnit = filterUnit === "all" || (dept && dept.unitId === parseInt(filterUnit));
       return matchesStatus && matchesSearch && matchesUnit;
     });
-  }, [allFeedbackRequests, filterStatus, searchQuery, filterUnit, employees, deptList]);
+  }, [allFeedbackRequests, filterStatus, searchQuery, filterUnit, employees, deptList, isAdminOrHR, authUser]);
 
   return (
     <AppLayout>
@@ -181,10 +196,12 @@ export default function FeedbackPage() {
             <h1 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">360° Feedback</h1>
             <p className="text-slate-500 mt-1">Collect comprehensive feedback from multiple sources</p>
           </div>
-          <Button className="gap-2" data-testid="button-new-review" onClick={() => setIsNewReviewOpen(true)}>
-            <Plus className="h-4 w-4" />
-            New 360° Review
-          </Button>
+          {isAdminOrHR && (
+            <Button className="gap-2" data-testid="button-new-review" onClick={() => setIsNewReviewOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New 360° Review
+            </Button>
+          )}
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -232,10 +249,10 @@ export default function FeedbackPage() {
                 />
                 <Select value={filterUnit} onValueChange={setFilterUnit}>
                   <SelectTrigger className="w-full sm:w-36" data-testid="select-filter-unit">
-                    <SelectValue placeholder="Unit" />
+                    <SelectValue placeholder={units?.length === 1 ? (units && units[0] ? units[0].name : "Unit") : "Unit"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                     ))}
@@ -296,7 +313,7 @@ export default function FeedbackPage() {
                           <Eye className="h-4 w-4 mr-1" />
                           View Results
                         </Button>
-                        {feedback.status !== "Completed" && (
+                        {isAdminOrHR && feedback.status !== "Completed" && (
                           <Button size="sm" data-testid={`button-remind-${index}`} onClick={() => handleSendReminder(feedback)}>
                             <Bell className="h-4 w-4 mr-1" />
                             Send Reminder

@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 
 interface ApprovalStep {
@@ -103,8 +104,10 @@ export default function ExpenseClaimsPage() {
   const [selectedClaim, setSelectedClaim] = useState<ExpenseClaim | null>(null);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-  const [currentUserRole] = useState("Manager");
-  const [currentUser] = useState("Current User");
+  const { user } = useAuth();
+  const currentUserRole = user?.role || "employee";
+  const currentUserName = `${user?.firstName} ${user?.lastName}`;
+  const currentUserEmail = user?.email || "";
 
   const { data: employees = [] } = useQuery<User[]>({
     queryKey: ['/api/employees'],
@@ -182,9 +185,13 @@ export default function ExpenseClaimsPage() {
     }
   };
 
+  const isHROrAdmin = ['hr', 'admin', 'manager', 'developer'].includes(currentUserRole);
+
   const filteredClaims = claims.filter(claim => {
+    // Data isolation: employees only see their own claims
+    if (!isHROrAdmin && claim.submittedBy !== currentUserEmail && claim.employee !== currentUserName) return false;
     const matchesSearch = claim.employee.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         claim.description.toLowerCase().includes(searchTerm.toLowerCase());
+      claim.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || claim.status.toLowerCase() === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -194,10 +201,10 @@ export default function ExpenseClaimsPage() {
       toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    
+
     const amount = parseFloat(newClaim.amount);
     const approvalSteps = getApprovalLevels(amount);
-    
+
     const claim: ExpenseClaim = {
       id: Date.now(),
       employee: newClaim.employee,
@@ -209,12 +216,12 @@ export default function ExpenseClaimsPage() {
       receipts: parseInt(newClaim.receipts) || 0,
       receiptDetails: newClaim.receiptDetails,
       notes: newClaim.notes,
-      submittedBy: currentUser,
+      submittedBy: currentUserEmail,
       approvalLevel: approvalSteps.length,
       currentApprovalStep: 0,
       approvalSteps: approvalSteps
     };
-    
+
     setClaims([claim, ...claims]);
     setNewClaim({ employee: "", category: "", description: "", amount: "", receipts: "", receiptDetails: "", notes: "" });
     setIsNewClaimOpen(false);
@@ -223,11 +230,11 @@ export default function ExpenseClaimsPage() {
 
   const handleApprove = (claim: ExpenseClaim) => {
     // Security check: prevent self-approval
-    if (claim.submittedBy === currentUser) {
+    if (claim.submittedBy === currentUserEmail) {
       toast({ title: "Error", description: "You cannot approve your own expense claim", variant: "destructive" });
       return;
     }
-    
+
     const currentStep = claim.currentApprovalStep;
     const updatedSteps = [...claim.approvalSteps];
     updatedSteps[currentStep] = {
@@ -236,27 +243,27 @@ export default function ExpenseClaimsPage() {
       approvedBy: currentUserRole,
       approvedAt: new Date().toLocaleDateString()
     };
-    
+
     // Check if this is the final step
     const isFinalStep = currentStep === claim.approvalLevel - 1;
     const newStatus = isFinalStep ? "Approved" : "Pending";
     const nextStep = isFinalStep ? currentStep : currentStep + 1;
-    
-    setClaims(claims.map(c => 
-      c.id === claim.id 
-        ? { 
-            ...c, 
-            status: newStatus as "Approved" | "Pending",
-            currentApprovalStep: nextStep,
-            approvalSteps: updatedSteps
-          } 
+
+    setClaims(claims.map(c =>
+      c.id === claim.id
+        ? {
+          ...c,
+          status: newStatus as "Approved" | "Pending",
+          currentApprovalStep: nextStep,
+          approvalSteps: updatedSteps
+        }
         : c
     ));
-    
-    const message = isFinalStep 
+
+    const message = isFinalStep
       ? `Expense claim for ₹${claim.amount.toLocaleString()} has been fully approved`
       : `Expense claim moved to next approval level (${updatedSteps[nextStep].role})`;
-    
+
     toast({ title: "Approved", description: message });
   };
 
@@ -272,13 +279,13 @@ export default function ExpenseClaimsPage() {
         toast({ title: "Error", description: "Please provide a reason for rejection", variant: "destructive" });
         return;
       }
-      
+
       // Security check: prevent self-rejection of own claim
-      if (selectedClaim.submittedBy === currentUser) {
+      if (selectedClaim.submittedBy === currentUserEmail) {
         toast({ title: "Error", description: "You cannot reject your own expense claim", variant: "destructive" });
         return;
       }
-      
+
       const currentStep = selectedClaim.currentApprovalStep;
       const updatedSteps = [...selectedClaim.approvalSteps];
       updatedSteps[currentStep] = {
@@ -287,18 +294,18 @@ export default function ExpenseClaimsPage() {
         approvedBy: currentUserRole,
         approvedAt: new Date().toLocaleDateString()
       };
-      
-      setClaims(claims.map(c => 
-        c.id === selectedClaim.id 
-          ? { 
-              ...c, 
-              status: "Rejected" as "Rejected", 
-              approvalSteps: updatedSteps,
-              notes: `${selectedClaim.notes || ""}\nRejected by ${currentUserRole}: ${rejectReason}`.trim()
-            } 
+
+      setClaims(claims.map(c =>
+        c.id === selectedClaim.id
+          ? {
+            ...c,
+            status: "Rejected" as "Rejected",
+            approvalSteps: updatedSteps,
+            notes: `${selectedClaim.notes || ""}\nRejected by ${currentUserRole}: ${rejectReason}`.trim()
+          }
           : c
       ));
-      
+
       toast({ title: "Rejected", description: `Expense claim has been rejected. Reason: ${rejectReason}`, variant: "destructive" });
       setIsRejectDialogOpen(false);
       setRejectReason("");
@@ -375,8 +382,8 @@ export default function ExpenseClaimsPage() {
               <div className="flex flex-wrap gap-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder="Search claims..." 
+                  <Input
+                    placeholder="Search claims..."
                     className="pl-10 w-64"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -453,13 +460,13 @@ export default function ExpenseClaimsPage() {
                           <Button size="icon" variant="ghost" onClick={() => handleView(claim)} data-testid={`button-view-${index}`}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {canApprove(claim, currentUserRole, currentUser) && (
+                          {canApprove(claim, currentUserRole, currentUserEmail) && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
                             <>
                               <Button size="sm" onClick={() => handleApprove(claim)} data-testid={`button-approve-${index}`}>Approve</Button>
                               <Button size="sm" variant="outline" onClick={() => handleReject(claim)} data-testid={`button-reject-${index}`}>Reject</Button>
                             </>
                           )}
-                          {claim.status === "Pending" && !canApprove(claim, currentUserRole, currentUser) && (
+                          {claim.status === "Pending" && !canApprove(claim, currentUserRole, currentUserEmail) && (
                             <span className="text-xs text-slate-500">Awaiting approval</span>
                           )}
                         </div>
@@ -489,17 +496,17 @@ export default function ExpenseClaimsPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="employee">Employee Name *</Label>
-              <Input 
-                id="employee" 
+              <Input
+                id="employee"
                 placeholder="Enter employee name"
                 value={newClaim.employee}
-                onChange={(e) => setNewClaim({...newClaim, employee: e.target.value})}
+                onChange={(e) => setNewClaim({ ...newClaim, employee: e.target.value })}
                 data-testid="input-employee"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">Category *</Label>
-              <Select value={newClaim.category} onValueChange={(v) => setNewClaim({...newClaim, category: v})}>
+              <Select value={newClaim.category} onValueChange={(v) => setNewClaim({ ...newClaim, category: v })}>
                 <SelectTrigger data-testid="select-category">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
@@ -515,55 +522,55 @@ export default function ExpenseClaimsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Input 
-                id="description" 
+              <Input
+                id="description"
                 placeholder="Brief description of expense"
                 value={newClaim.description}
-                onChange={(e) => setNewClaim({...newClaim, description: e.target.value})}
+                onChange={(e) => setNewClaim({ ...newClaim, description: e.target.value })}
                 data-testid="input-description"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount (₹) *</Label>
-                <Input 
-                  id="amount" 
+                <Input
+                  id="amount"
                   type="number"
                   placeholder="0.00"
                   value={newClaim.amount}
-                  onChange={(e) => setNewClaim({...newClaim, amount: e.target.value})}
+                  onChange={(e) => setNewClaim({ ...newClaim, amount: e.target.value })}
                   data-testid="input-amount"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="receipts">Number of Receipts</Label>
-                <Input 
-                  id="receipts" 
+                <Input
+                  id="receipts"
                   type="number"
                   placeholder="0"
                   value={newClaim.receipts}
-                  onChange={(e) => setNewClaim({...newClaim, receipts: e.target.value})}
+                  onChange={(e) => setNewClaim({ ...newClaim, receipts: e.target.value })}
                   data-testid="input-receipts"
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="receiptDetails">Receipt Details</Label>
-              <Input 
-                id="receiptDetails" 
+              <Input
+                id="receiptDetails"
                 placeholder="List of receipts attached"
                 value={newClaim.receiptDetails}
-                onChange={(e) => setNewClaim({...newClaim, receiptDetails: e.target.value})}
+                onChange={(e) => setNewClaim({ ...newClaim, receiptDetails: e.target.value })}
                 data-testid="input-receipt-details"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Additional Notes</Label>
-              <Textarea 
-                id="notes" 
+              <Textarea
+                id="notes"
                 placeholder="Any additional information"
                 value={newClaim.notes}
-                onChange={(e) => setNewClaim({...newClaim, notes: e.target.value})}
+                onChange={(e) => setNewClaim({ ...newClaim, notes: e.target.value })}
                 data-testid="input-notes"
               />
             </div>
@@ -626,7 +633,7 @@ export default function ExpenseClaimsPage() {
                   <Badge className={getStatusColor(selectedClaim.status)}>{selectedClaim.status}</Badge>
                 </div>
               </div>
-              
+
               {/* Approval Flow Section */}
               <div className="border-t pt-4">
                 <p className="text-sm font-semibold text-slate-700 mb-3">Approval Flow ({selectedClaim.approvalLevel} levels)</p>
@@ -644,7 +651,7 @@ export default function ExpenseClaimsPage() {
                   ))}
                 </div>
               </div>
-              
+
               {selectedClaim.receiptDetails && (
                 <div>
                   <p className="text-sm text-slate-500">Receipt Details</p>
@@ -661,7 +668,7 @@ export default function ExpenseClaimsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsViewOpen(false)}>Close</Button>
-            {selectedClaim && canApprove(selectedClaim, currentUserRole, currentUser) && (
+            {selectedClaim && canApprove(selectedClaim, currentUserRole, currentUserEmail) && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
               <>
                 <Button onClick={() => { handleApprove(selectedClaim); setIsViewOpen(false); }}>Approve</Button>
                 <Button variant="destructive" onClick={() => { handleReject(selectedClaim); setIsViewOpen(false); }}>Reject</Button>
@@ -682,7 +689,7 @@ export default function ExpenseClaimsPage() {
             <DialogDescription>Please provide a reason for rejection</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Textarea 
+            <Textarea
               placeholder="Enter reason for rejection..."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}

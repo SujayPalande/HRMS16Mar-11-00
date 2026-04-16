@@ -783,10 +783,10 @@ export default function DocumentsPage() {
                 </div>
                 <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                   <SelectTrigger className="w-48 h-8 text-sm" data-testid="select-unit-filter">
-                    <SelectValue placeholder="All Units" />
+                    <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map(unit => (
                       <SelectItem key={unit.id} value={unit.id.toString()}>{unit.name}</SelectItem>
                     ))}

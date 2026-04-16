@@ -22,35 +22,53 @@ class AttendanceController {
         $role      = $user['role'];
         $currentId = $user['id'];
 
-        if ($userId) {
-            if ($role === 'employee' && $userId !== $currentId) Response::forbidden('You can only view your own attendance');
-            $records = $this->byUser($db, $userId, $month);
-            Response::json(Auth::camelize($records));
-            return;
-        }
+        $sql = "SELECT ar.* FROM attendance_records ar 
+                JOIN users u ON u.id = ar.user_id 
+                LEFT JOIN departments d ON d.id = u.department_id";
+        $where = [];
+        $params = [];
 
-        if ($date) {
-            if ($role !== 'admin') Response::forbidden('Only administrators can query by date');
-            Response::json(Auth::camelize($this->byDate($db, $date)));
-            return;
-        }
-
-        if ($month) {
-            if ($role === 'admin') {
-                Response::json(Auth::camelize($this->byMonth($db, $month)));
+        // Multi-tenancy / Unit Isolation
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) {
+                $where[] = "ar.user_id = ?";
+                $params[] = $currentId;
             } else {
-                Response::json(Auth::camelize($this->byUser($db, $currentId, $month)));
+                $where[] = "d.unit_id = ?";
+                $params[] = $authorizedUnit;
             }
-            return;
+        } elseif ($role === 'employee') {
+            $where[] = "ar.user_id = ?";
+            $params[] = $currentId;
         }
 
-        // No params
-        if ($role === 'admin') {
-            $stmt = $db->query('SELECT * FROM attendance_records ORDER BY date DESC');
-            Response::json(Auth::camelize($stmt->fetchAll()));
-        } else {
-            Response::json(Auth::camelize($this->byUser($db, $currentId, null)));
+        // Filters
+        if ($userId) {
+            $where[] = "ar.user_id = ?";
+            $params[] = $userId;
         }
+        if ($date) {
+            $where[] = "DATE(ar.date) = ?";
+            $params[] = date('Y-m-d', strtotime($date));
+        }
+        if ($month) {
+            $parts = explode('-', $month);
+            if (count($parts) === 2) {
+                $where[] = "YEAR(ar.date) = ? AND MONTH(ar.date) = ?";
+                $params[] = (int)$parts[0];
+                $params[] = (int)$parts[1];
+            }
+        }
+
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY ar.date DESC';
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        Response::json(Auth::camelize($stmt->fetchAll()));
     }
 
     public function create(array $user, array $body): void {
@@ -67,7 +85,17 @@ class AttendanceController {
         if ($role === 'employee' && $userId !== $currentId) {
             Response::forbidden('You can only create your own attendance records');
         }
-        if ($role === 'employee') $userId = $currentId;
+        
+        // HR/Manager can only create for their unit
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false && $userId !== $currentId) Response::forbidden();
+            if ($authorizedUnit !== false) {
+                $checkStmt = $db->prepare("SELECT d.unit_id FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id=?");
+                $checkStmt->execute([$userId]);
+                if ($checkStmt->fetchColumn() != $authorizedUnit) Response::forbidden('Target employee is not in your authorized unit');
+            }
+        }
 
         $status = $this->computeStatus($checkIn, $checkOut);
 
@@ -83,10 +111,20 @@ class AttendanceController {
     }
 
     public function update(array $user, int $id, array $body): void {
-        if (!in_array($user['role'], ['admin','hr','manager'])) {
+        if (!in_array($user['role'], ['admin','hr','manager','developer'])) {
             Response::forbidden('Insufficient permissions to edit attendance records');
         }
         $db  = getDB();
+        
+        // Check unit access
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            $checkStmt = $db->prepare("SELECT d.unit_id FROM attendance_records ar JOIN users u ON u.id = ar.user_id JOIN departments d ON d.id = u.department_id WHERE ar.id=?");
+            $checkStmt->execute([$id]);
+            $unitId = $checkStmt->fetchColumn();
+            if ($unitId != $authorizedUnit) Response::forbidden('This record belongs to an employee outside your unit');
+        }
+
         $cur = $db->prepare('SELECT * FROM attendance_records WHERE id=? LIMIT 1');
         $cur->execute([$id]);
         $existing = $cur->fetch();

@@ -382,10 +382,10 @@ export default function MlwfPage() {
                 <Label>Unit</Label>
                 <Select value={selectedUnit} onValueChange={(val) => { setSelectedUnit(val); setSelectedDepartment("all"); }}>
                   <SelectTrigger data-testid="select-unit">
-                    <SelectValue placeholder="All Units" />
+                    <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map((u) => (
                       <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
                     ))}

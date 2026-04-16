@@ -11,6 +11,7 @@ import { BookOpen, Plus, CheckCircle, Clock, XCircle, IndianRupee, Search, Filte
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
@@ -135,9 +136,11 @@ export default function TrainingRequestsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showRejectDialog, setShowRejectDialog] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const { user } = useAuth();
+  const currentUserRole = user?.role || "employee";
   const [rejectReason, setRejectReason] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState<{ id: number; employee: string; training: string; provider: string; cost: number; requestDate: string; status: string; description: string; justification: string; rejectReason?: string } | null>(null);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
 
   const [formData, setFormData] = useState({
     employee: "",
@@ -150,11 +153,11 @@ export default function TrainingRequestsPage() {
 
   const [selectedUnit, setSelectedUnit] = useState("all");
   const { data: employees = [] } = useQuery<User[]>({ queryKey: ['/api/employees'] });
-  const { data: departments = [] } = useQuery<{id: number; name: string; unitId?: number}[]>({ queryKey: ['/api/departments'] });
-  const { data: units = [] } = useQuery<{id: number; name: string}[]>({ queryKey: ['/api/masters/units'] });
+  const { data: departments = [] } = useQuery<{ id: number; name: string; unitId?: number }[]>({ queryKey: ['/api/departments'] });
+  const { data: units = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['/api/masters/units'] });
   const trainReqInitialized = useRef(false);
 
-  const [requests, setRequests] = useState<{id: number; employee: string; training: string; provider: string; cost: number; requestDate: string; status: string; description: string; justification: string; rejectReason?: string}[]>([]);
+  const [requests, setRequests] = useState<{ id: number; employee: string; training: string; provider: string; cost: number; requestDate: string; status: string; description: string; justification: string; rejectReason?: string }[]>([]);
 
   useEffect(() => {
     if (!trainReqInitialized.current && employees.length > 0) {
@@ -192,10 +195,16 @@ export default function TrainingRequestsPage() {
     { title: "Rejected", value: requests.filter(r => r.status === "Rejected").length.toString(), icon: <XCircle className="h-5 w-5" />, color: "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400" },
   ];
 
+  const isHROrAdmin = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'manager' || user?.role === 'developer';
+
   const filteredRequests = requests.filter(request => {
+    // Data isolation: employees only see their own requests
+    const currentUserName = user ? `${user.firstName} ${user.lastName}` : "";
+    if (!isHROrAdmin && request.employee !== currentUserName) return false;
+
     const matchesSearch = request.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          request.training.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          request.provider.toLowerCase().includes(searchQuery.toLowerCase());
+      request.training.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.provider.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || request.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -449,7 +458,7 @@ export default function TrainingRequestsPage() {
                             <Button size="icon" variant="ghost" data-testid={`button-view-${index}`} onClick={() => { setSelectedRequest(request); setShowViewDialog(true); }}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            {request.status === "Pending" && (
+                            {request.status === "Pending" && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
                               <>
                                 <Button size="sm" data-testid={`button-approve-${index}`} onClick={() => handleApprove(request)}>
                                   <CheckCircle className="h-4 w-4 mr-1" />
@@ -505,7 +514,7 @@ export default function TrainingRequestsPage() {
                       transition={{ delay: index * 0.08, type: "spring", stiffness: 100 }}
                       whileHover={{ y: -8 }}
                     >
-                      <Card 
+                      <Card
                         className="h-full overflow-hidden shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer group"
                         onClick={() => window.open(course.url, '_blank')}
                         data-testid={`card-course-${course.id}`}
@@ -517,19 +526,19 @@ export default function TrainingRequestsPage() {
                           }} />
                           <IconComponent className="h-16 w-16 text-white opacity-90 relative z-10" strokeWidth={1.5} />
                         </div>
-                        
+
                         <CardContent className="p-4 flex flex-col h-[calc(100%-112px)]">
                           {/* Title */}
                           <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight mb-3 line-clamp-2 group-hover:text-slate-950 dark:group-hover:text-slate-50 transition-colors">{course.title}</h4>
-                          
+
                           {/* Description */}
                           <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 flex-1 line-clamp-3 leading-relaxed">{course.description}</p>
-                          
+
                           {/* Platform Badge */}
                           <div className="mb-3">
                             <Badge variant="secondary" className="text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">{course.platform}</Badge>
                           </div>
-                          
+
                           {/* Button */}
                           <Button
                             variant="default"
@@ -568,7 +577,7 @@ export default function TrainingRequestsPage() {
                       transition={{ delay: index * 0.08, type: "spring", stiffness: 100 }}
                       whileHover={{ y: -8 }}
                     >
-                      <Card 
+                      <Card
                         className="h-full overflow-hidden shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer group"
                         onClick={() => window.open(course.url, '_blank')}
                         data-testid={`card-course-${course.id}`}
@@ -580,19 +589,19 @@ export default function TrainingRequestsPage() {
                           }} />
                           <IconComponent className="h-16 w-16 text-white opacity-90 relative z-10" strokeWidth={1.5} />
                         </div>
-                        
+
                         <CardContent className="p-4 flex flex-col h-[calc(100%-112px)]">
                           {/* Title */}
                           <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight mb-3 line-clamp-2 group-hover:text-slate-950 dark:group-hover:text-slate-50 transition-colors">{course.title}</h4>
-                          
+
                           {/* Description */}
                           <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 flex-1 line-clamp-3 leading-relaxed">{course.description}</p>
-                          
+
                           {/* Platform Badge */}
                           <div className="mb-3">
                             <Badge variant="secondary" className="text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">{course.platform}</Badge>
                           </div>
-                          
+
                           {/* Button */}
                           <Button
                             variant="default"
@@ -628,29 +637,29 @@ export default function TrainingRequestsPage() {
           <div className="space-y-4">
             <div>
               <Label>Employee Name *</Label>
-              <Input value={formData.employee} onChange={(e) => setFormData({...formData, employee: e.target.value})} placeholder="Employee name" data-testid="input-employee" />
+              <Input value={formData.employee} onChange={(e) => setFormData({ ...formData, employee: e.target.value })} placeholder="Employee name" data-testid="input-employee" />
             </div>
             <div>
               <Label>Training Program *</Label>
-              <Input value={formData.training} onChange={(e) => setFormData({...formData, training: e.target.value})} placeholder="Training course/program name" data-testid="input-training" />
+              <Input value={formData.training} onChange={(e) => setFormData({ ...formData, training: e.target.value })} placeholder="Training course/program name" data-testid="input-training" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Provider *</Label>
-                <Input value={formData.provider} onChange={(e) => setFormData({...formData, provider: e.target.value})} placeholder="Training provider" data-testid="input-provider" />
+                <Input value={formData.provider} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} placeholder="Training provider" data-testid="input-provider" />
               </div>
               <div>
                 <Label>Cost (Rs.)</Label>
-                <Input type="number" value={formData.cost} onChange={(e) => setFormData({...formData, cost: e.target.value})} placeholder="0 for free" data-testid="input-cost" />
+                <Input type="number" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} placeholder="0 for free" data-testid="input-cost" />
               </div>
             </div>
             <div>
               <Label>Description</Label>
-              <Textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Brief description of the training..." data-testid="input-description" />
+              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Brief description of the training..." data-testid="input-description" />
             </div>
             <div>
               <Label>Business Justification</Label>
-              <Textarea value={formData.justification} onChange={(e) => setFormData({...formData, justification: e.target.value})} placeholder="Why is this training needed?" data-testid="input-justification" />
+              <Textarea value={formData.justification} onChange={(e) => setFormData({ ...formData, justification: e.target.value })} placeholder="Why is this training needed?" data-testid="input-justification" />
             </div>
           </div>
           <DialogFooter>
@@ -731,29 +740,29 @@ export default function TrainingRequestsPage() {
           <div className="space-y-4">
             <div>
               <Label>Employee Name *</Label>
-              <Input value={formData.employee} onChange={(e) => setFormData({...formData, employee: e.target.value})} data-testid="input-edit-employee" />
+              <Input value={formData.employee} onChange={(e) => setFormData({ ...formData, employee: e.target.value })} data-testid="input-edit-employee" />
             </div>
             <div>
               <Label>Training Program *</Label>
-              <Input value={formData.training} onChange={(e) => setFormData({...formData, training: e.target.value})} data-testid="input-edit-training" />
+              <Input value={formData.training} onChange={(e) => setFormData({ ...formData, training: e.target.value })} data-testid="input-edit-training" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Provider *</Label>
-                <Input value={formData.provider} onChange={(e) => setFormData({...formData, provider: e.target.value})} />
+                <Input value={formData.provider} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} />
               </div>
               <div>
                 <Label>Cost (Rs.)</Label>
-                <Input type="number" value={formData.cost} onChange={(e) => setFormData({...formData, cost: e.target.value})} />
+                <Input type="number" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} />
               </div>
             </div>
             <div>
               <Label>Description</Label>
-              <Textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
             </div>
             <div>
               <Label>Business Justification</Label>
-              <Textarea value={formData.justification} onChange={(e) => setFormData({...formData, justification: e.target.value})} />
+              <Textarea value={formData.justification} onChange={(e) => setFormData({ ...formData, justification: e.target.value })} />
             </div>
           </div>
           <DialogFooter>

@@ -8,15 +8,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { LeaveForm } from "@/components/leave/leave-form";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  Plus, 
-  Calendar, 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  AlertTriangle, 
-  TrendingUp, 
-  Users, 
+import {
+  Plus,
+  Calendar,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  TrendingUp,
+  Users,
   FileText,
   Check,
   X,
@@ -85,14 +85,14 @@ export default function LeavePage() {
   // Parse userId from URL if present
   const queryParams = useMemo(() => new URLSearchParams(window.location.search), [window.location.search]);
   const targetUserId = queryParams.get("id") ? parseInt(queryParams.get("id")!) : authUser?.id;
-  
+
   // Fetch all employees to display names (Needed for effectiveUser derivation)
   const { data: employees = [] } = useQuery<User[]>({
     queryKey: ["/api/employees"],
     enabled: !!authUser,
   });
 
-  const { data: units = [] } = useQuery<{id: number; name: string; code: string}[]>({
+  const { data: units = [] } = useQuery<{ id: number; name: string; code: string }[]>({
     queryKey: ['/api/masters/units'],
     enabled: !!authUser && (authUser.role === 'admin' || authUser.role === 'hr' || authUser.role === 'manager'),
   });
@@ -106,7 +106,7 @@ export default function LeavePage() {
     if (targetUserId === authUser?.id) return authUser;
     return employees.find(emp => emp.id === targetUserId);
   }, [targetUserId, authUser, employees]);
-  
+
   // Fetch leave requests for current user (My Requests tab)
   const { data: myLeaveRequests = [] } = useQuery<LeaveRequest[]>({
     queryKey: ["/api/leave-requests", { userId: authUser?.id }],
@@ -120,19 +120,19 @@ export default function LeavePage() {
   });
 
   const displayLeaveRequests = targetUserId === authUser?.id ? myLeaveRequests : targetLeaveRequests;
-  
+
   // Fetch pending leave requests (for admins/HR/managers)
   const { data: pendingRequests = [] } = useQuery<LeaveRequest[]>({
     queryKey: ["/api/leave-requests", { status: "pending" }],
     enabled: !!authUser && (authUser.role === 'admin' || authUser.role === 'hr' || authUser.role === 'manager'),
   });
-  
+
   // Fetch all leave requests for analytics (admin view)
   const { data: allLeaveRequests = [] } = useQuery<LeaveRequest[]>({
     queryKey: ["/api/leave-requests"],
     enabled: !!authUser && (authUser.role === 'admin' || authUser.role === 'hr' || authUser.role === 'manager'),
   });
-  
+
   // Fetch effective user's leave balance
   const { data: leaveBalance, isLoading: isLoadingLeaveBalance } = useQuery<LeaveBalance>({
     queryKey: ['/api/employees/leave-balance', effectiveUser?.id],
@@ -143,7 +143,7 @@ export default function LeavePage() {
     },
     enabled: !!effectiveUser,
   });
-  
+
   // Approve leave request
   const approveMutation = useMutation({
     mutationFn: async (requestId: number) => {
@@ -158,7 +158,7 @@ export default function LeavePage() {
       toast({ title: "Request approved" });
     },
   });
-  
+
   // Reject leave request
   const rejectMutation = useMutation({
     mutationFn: async (requestId: number) => {
@@ -173,7 +173,7 @@ export default function LeavePage() {
       toast({ title: "Request rejected" });
     },
   });
-  
+
   // Cancel leave request
   const cancelMutation = useMutation({
     mutationFn: async (requestId: number) => {
@@ -185,19 +185,19 @@ export default function LeavePage() {
       toast({ title: "Request canceled" });
     },
   });
-  
+
   // Get user info by ID
   const getUserById = (userId: number) => {
     return employees.find(emp => emp.id === userId);
   };
-  
+
   // Format date range
   const formatDateRange = (start: string | Date, end: string | Date) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
     return `${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`;
   };
-  
+
   // Calculate duration in business days
   const calculateDuration = (start: string | Date, end: string | Date) => {
     const startDate = new Date(start);
@@ -206,7 +206,7 @@ export default function LeavePage() {
     const businessDays = eachDayOfInterval({ start: startDate, end: endDate }).filter(day => !isWeekend(day));
     return `${businessDays.length} working day${businessDays.length !== 1 ? 's' : ''}`;
   };
-  
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved": return <Badge className="bg-emerald-100 text-emerald-800">Approved</Badge>;
@@ -230,18 +230,18 @@ export default function LeavePage() {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
     const paidLeaveTypes = ['annual', 'sick', 'personal', 'halfday', 'other'];
-    
-    const leaveRequestsData = userId === authUser?.id ? myLeaveRequests : 
-                             userId === effectiveUser?.id ? targetLeaveRequests : 
-                             allLeaveRequests;
-    
+
+    const leaveRequestsData = userId === authUser?.id ? myLeaveRequests :
+      userId === effectiveUser?.id ? targetLeaveRequests :
+        allLeaveRequests;
+
     const monthlyPaidLeaveUsed = leaveRequestsData
       .filter(request => {
         const requestStart = new Date(request.startDate);
         const requestEnd = new Date(request.endDate);
-        return requestStart <= monthEnd && requestEnd >= monthStart && 
-               request.status === "approved" && paidLeaveTypes.includes(request.type) && 
-               request.userId === userId;
+        return requestStart <= monthEnd && requestEnd >= monthStart &&
+          request.status === "approved" && paidLeaveTypes.includes(request.type) &&
+          request.userId === userId;
       })
       .reduce((total: number, request: LeaveRequest) => {
         const requestStart = new Date(request.startDate);
@@ -254,7 +254,7 @@ export default function LeavePage() {
           return clippedStart <= clippedEnd ? total + eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(day => !isWeekend(day)).length : total;
         }
       }, 0);
-    
+
     return { used: monthlyPaidLeaveUsed, limit: 1.5, remaining: Math.max(0, 1.5 - monthlyPaidLeaveUsed) };
   };
 
@@ -394,7 +394,7 @@ export default function LeavePage() {
                           </div>
                           <div className="flex items-center justify-between border-b pb-2">
                             <span className="text-sm font-medium text-slate-500">Status</span>
-                            {getStatusBadge(selectedLeave.status)}
+                            {getStatusBadge(selectedLeave.status || 'pending')}
                           </div>
                           <div className="space-y-1">
                             <span className="text-sm font-medium text-slate-500">Reason</span>
@@ -415,7 +415,7 @@ export default function LeavePage() {
                 <div className="flex items-center space-x-2 text-sm text-slate-600"><CalendarDays className="w-4 h-4 text-teal-500" /><span>{formatDateRange(request.startDate, request.endDate)}</span></div>
                 {request.reason && <p className="text-sm text-slate-500 line-clamp-2">{request.reason}</p>}
                 <div className="flex items-center justify-between pt-2">
-                  {getStatusBadge(request.status)}
+                  {getStatusBadge(request.status || 'pending')}
                   {getPaidUnpaidBadge(request)}
                 </div>
               </div>
@@ -431,7 +431,7 @@ export default function LeavePage() {
     const sick = 10;
     const personal = 5;
     const halfday = 12;
-    
+
     const used = displayLeaveRequests
       .filter(request => request.status === "approved" && request.type === type)
       .reduce((total, request) => {
@@ -444,7 +444,7 @@ export default function LeavePage() {
           return total + businessDays.length;
         }
       }, 0);
-    
+
     switch (type) {
       case "annual": return { total: annual, used, remaining: annual - used };
       case "sick": return { total: sick, used, remaining: sick - used };
@@ -540,7 +540,7 @@ export default function LeavePage() {
                   <div className="p-3 bg-teal-50 rounded-xl text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-colors"><Calendar className="w-6 h-6" /></div>
                   <Badge className="bg-teal-100 text-teal-700 font-bold px-2 py-0.5 rounded-full">Annual</Badge>
                 </div>
-                <div className="text-3xl font-black text-slate-900 mb-1">{leaveBalance?.annual || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
+                <div className="text-3xl font-black text-slate-900 mb-1">{calculateLeaveBalance('annual').total || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Total Balance</p>
                 <div className="space-y-2"><div className="flex justify-between text-xs font-bold"><span className="text-teal-600">Used: {calculateLeaveBalance('annual').used}</span><span className="text-slate-400">Rem: {calculateLeaveBalance('annual').remaining}</span></div><Progress value={(calculateLeaveBalance('annual').used / 20) * 100} className="h-2 bg-teal-50" /></div>
               </CardContent></Card>
@@ -549,7 +549,7 @@ export default function LeavePage() {
                   <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Award className="w-6 h-6" /></div>
                   <Badge className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full">Sick</Badge>
                 </div>
-                <div className="text-3xl font-black text-slate-900 mb-1">{leaveBalance?.sick || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
+                <div className="text-3xl font-black text-slate-900 mb-1">{calculateLeaveBalance('sick').total || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Available Days</p>
                 <div className="space-y-2"><div className="flex justify-between text-xs font-bold"><span className="text-indigo-600">Used: {calculateLeaveBalance('sick').used}</span><span className="text-slate-400">Rem: {calculateLeaveBalance('sick').remaining}</span></div><Progress value={(calculateLeaveBalance('sick').used / 10) * 100} className="h-2 bg-indigo-50" /></div>
               </CardContent></Card>
@@ -558,7 +558,7 @@ export default function LeavePage() {
                   <div className="p-3 bg-purple-50 rounded-xl text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Star className="w-6 h-6" /></div>
                   <Badge className="bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Personal</Badge>
                 </div>
-                <div className="text-3xl font-black text-slate-900 mb-1">{leaveBalance?.personal || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
+                <div className="text-3xl font-black text-slate-900 mb-1">{calculateLeaveBalance('personal').total || 0} <span className="text-sm font-medium text-slate-400">Days</span></div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Accrued Leaves</p>
                 <div className="space-y-2"><div className="flex justify-between text-xs font-bold"><span className="text-purple-600">Used: {calculateLeaveBalance('personal').used}</span><span className="text-slate-400">Rem: {calculateLeaveBalance('personal').remaining}</span></div><Progress value={(calculateLeaveBalance('personal').used / 5) * 100} className="h-2 bg-purple-50" /></div>
               </CardContent></Card>
@@ -594,10 +594,10 @@ export default function LeavePage() {
                 {(authUser?.role === 'admin' || authUser?.role === 'hr' || authUser?.role === 'manager') && (
                   <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                     <SelectTrigger className="w-full sm:w-44 h-11 bg-white border-2 border-slate-200 rounded-xl font-medium" data-testid="select-unit-filter-leave">
-                      <SelectValue placeholder="All Units" />
+                      <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Units</SelectItem>
+                      {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                       {units.map(u => (
                         <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
                       ))}

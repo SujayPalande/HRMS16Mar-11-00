@@ -2,9 +2,9 @@ import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { User } from "@shared/schema";
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { 
-  LayoutDashboard, Users, Building2, ShieldCheck, Clock, 
-  CalendarCheck, CalendarClock, FileBarChart, FileSpreadsheet, 
+import {
+  LayoutDashboard, Users, Building2, ShieldCheck, Clock,
+  CalendarCheck, CalendarClock, FileBarChart, FileSpreadsheet,
   LogOut, ChevronRight, ChevronLeft, ChevronDown, DollarSign, Settings,
   Target, GraduationCap, Briefcase, Car, Package, FileText, Scale,
   UserCheck, BarChart3, Wallet, Receipt, TrendingUp, Award,
@@ -31,6 +31,8 @@ type NavItem = {
   permissions?: string[];
 };
 
+type SectionStatus = 'C' | 'WIP' | 'TBD';
+
 type NavSection = {
   id: string;
   title: string;
@@ -39,6 +41,7 @@ type NavSection = {
   items: NavItem[];
   permissions?: string[];
   adminOnly?: boolean;
+  status?: SectionStatus;
 };
 
 interface SidebarProps {
@@ -50,12 +53,12 @@ export function Sidebar({ className }: SidebarProps) {
   const { collapsed, toggleSidebar } = useSidebar();
   const { user, logoutMutation } = useAuth();
   const { organizationName } = useOrganization();
-  
+
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('sidebar-open-sections');
     return saved ? JSON.parse(saved) : {};
   });
-  
+
   // Ref to preserve sidebar scroll position when navigating
   const navRef = useRef<HTMLElement>(null);
   const scrollPositionRef = useRef<number>(0);
@@ -64,7 +67,7 @@ export function Sidebar({ className }: SidebarProps) {
   useEffect(() => {
     localStorage.setItem('sidebar-open-sections', JSON.stringify(openSections));
   }, [openSections]);
-  
+
   // Restore scroll position after location change with multiple attempts
   useLayoutEffect(() => {
     if (location !== previousLocationRef.current) {
@@ -72,16 +75,16 @@ export function Sidebar({ className }: SidebarProps) {
       // We no longer automatically scroll on location change to respect user position
     }
   }, [location]);
-  
+
   // Save scroll position on every scroll event to capture the latest position
   useEffect(() => {
     const navElement = navRef.current;
     if (!navElement) return;
-    
+
     const handleScroll = () => {
       scrollPositionRef.current = navElement.scrollTop;
     };
-    
+
     navElement.addEventListener('scroll', handleScroll, { passive: true });
     return () => navElement.removeEventListener('scroll', handleScroll);
   }, []);
@@ -117,6 +120,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Administration",
       icon: <Settings2 className="h-5 w-5" />,
       defaultOpen: true,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Master Data", href: "/master-data", icon: <Settings className="h-4 w-4" /> },
         { title: "System Settings", href: "/developer/system-settings", icon: <Settings className="h-4 w-4" /> },
@@ -128,6 +132,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Dashboard",
       icon: <LayoutDashboard className="h-5 w-5" />,
       defaultOpen: true,
+      status: "WIP" as SectionStatus,
       items: [
         { title: "Overview", href: "/", icon: <LayoutDashboard className="h-4 w-4" /> }
       ]
@@ -137,6 +142,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Employee Management",
       icon: <Users className="h-5 w-5" />,
       defaultOpen: true,
+      status: "C" as SectionStatus,
       items: [
         { title: "Employees", href: "/employees", icon: <Users className="h-4 w-4" />, permissions: ["employees.view"] },
         { title: "Departments", href: "/departments", icon: <Building2 className="h-4 w-4" />, permissions: ["departments.view"] },
@@ -149,6 +155,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Attendance & Leave",
       icon: <Clock className="h-5 w-5" />,
       defaultOpen: true,
+      status: "C" as SectionStatus,
       items: [
         { title: "Attendance", href: "/attendance", icon: <Clock className="h-4 w-4" />, permissions: ["attendance.view"] },
         { title: "Leave Management", href: "/leave", icon: <CalendarCheck className="h-4 w-4" />, permissions: ["leave.view"] },
@@ -160,12 +167,13 @@ export function Sidebar({ className }: SidebarProps) {
       id: "payroll",
       title: "Payroll Management",
       icon: <DollarSign className="h-5 w-5" />,
-      adminOnly: true,
+      status: "C" as SectionStatus,
       items: [
         { title: "Payroll Dashboard", href: "/payroll", icon: <Wallet className="h-4 w-4" />, permissions: ["payroll.view"] },
         { title: "Salary Structure", href: "/payroll/structure", icon: <Receipt className="h-4 w-4" />, permissions: ["payroll.view"] },
         { title: "Payslip Generation", href: "/payroll/payslips", icon: <FileText className="h-4 w-4" />, permissions: ["payroll.view"] },
-        { title: "Bank Transfers", href: "/payroll/transfers", icon: <DollarSign className="h-4 w-4" />, permissions: ["payroll.view"] }
+        { title: "Bank Transfers", href: "/payroll/transfers", icon: <DollarSign className="h-4 w-4" />, permissions: ["payroll.view"] },
+        { title: "My Payslips", href: "/self-service/payslips", icon: <FileText className="h-4 w-4" />, permissions: ["payroll.view_own"] }
       ]
     },
     {
@@ -173,6 +181,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Recruitment & Onboarding",
       icon: <Briefcase className="h-5 w-5" />,
       adminOnly: true,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Offer Letters", href: "/recruitment/offers", icon: <FileSignature className="h-4 w-4" />, permissions: ["employees.view"] },
         { title: "Digital Joining", href: "/recruitment/joining", icon: <UserCheck className="h-4 w-4" />, permissions: ["employees.view"] },
@@ -183,6 +192,7 @@ export function Sidebar({ className }: SidebarProps) {
       id: "performance",
       title: "Performance Management",
       icon: <Target className="h-5 w-5" />,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Goals & KPIs", href: "/performance/goals", icon: <Target className="h-4 w-4" /> },
         { title: "Appraisals", href: "/performance/appraisals", icon: <TrendingUp className="h-4 w-4" /> },
@@ -194,6 +204,7 @@ export function Sidebar({ className }: SidebarProps) {
       id: "training",
       title: "Training & Development",
       icon: <GraduationCap className="h-5 w-5" />,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Training Calendar", href: "/training/calendar", icon: <Calendar className="h-4 w-4" /> },
         { title: "Skill Matrix", href: "/training/skills", icon: <ClipboardList className="h-4 w-4" /> },
@@ -205,6 +216,7 @@ export function Sidebar({ className }: SidebarProps) {
       id: "expense",
       title: "Expense & Travel",
       icon: <Car className="h-5 w-5" />,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Expense Claims", href: "/expense/claims", icon: <Receipt className="h-4 w-4" /> },
         { title: "Travel Requests", href: "/expense/travel", icon: <Truck className="h-4 w-4" /> },
@@ -216,6 +228,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Asset Management",
       icon: <Package className="h-5 w-5" />,
       adminOnly: true,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Asset Allocation", href: "/assets/allocation", icon: <Box className="h-4 w-4" />, permissions: ["employees.view"] },
         { title: "Asset Tracking", href: "/assets/tracking", icon: <Package className="h-4 w-4" />, permissions: ["employees.view"] },
@@ -227,6 +240,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "HR Letters & Documents",
       icon: <FileText className="h-5 w-5" />,
       adminOnly: true,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "Appointment Letters", href: "/letters/appointment", icon: <FileSignature className="h-4 w-4" />, permissions: ["employees.view"] },
         { title: "Increment Letters", href: "/letters/increment", icon: <TrendingUp className="h-4 w-4" />, permissions: ["employees.view"] },
@@ -238,6 +252,7 @@ export function Sidebar({ className }: SidebarProps) {
       id: "self-service",
       title: "Self Service",
       icon: <UserCheck className="h-5 w-5" />,
+      status: "TBD" as SectionStatus,
       items: [
         { title: "My Profile", href: "/self-service/profile", icon: <Users className="h-4 w-4" /> },
         { title: "My Payslips", href: "/self-service/payslips", icon: <FileText className="h-4 w-4" /> },
@@ -250,6 +265,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "Reports & Analytics",
       icon: <BarChart3 className="h-5 w-5" />,
       adminOnly: true,
+      status: "C" as SectionStatus,
       items: [
         { title: "Attendance Reports", href: "/reports/attendance", icon: <FileBarChart className="h-4 w-4" />, permissions: ["reports.view"] },
         { title: "Leave Reports", href: "/reports/leave", icon: <FileSpreadsheet className="h-4 w-4" />, permissions: ["reports.view"] },
@@ -266,17 +282,17 @@ export function Sidebar({ className }: SidebarProps) {
     }
   ];
 
-    const sectionsToUse = isDeveloper ? developerNavSections : navSections;
+  const sectionsToUse = isDeveloper ? developerNavSections : navSections;
 
-    const filteredSections = sectionsToUse
-      .filter(section => {
-        if (section.id === "master-data") return isSuperAdmin;
-        if (section.adminOnly && !isAdminRole) return false;
-        if (section.permissions) {
-          return hasAnyPermission(user, section.permissions);
-        }
-        return true;
-      })
+  const filteredSections = sectionsToUse
+    .filter(section => {
+      if (section.id === "master-data") return isSuperAdmin;
+      if (section.adminOnly && !isAdminRole) return false;
+      if (section.permissions) {
+        return hasAnyPermission(user, section.permissions);
+      }
+      return true;
+    })
     .map(section => ({
       ...section,
       items: section.items.filter(item => {
@@ -300,16 +316,30 @@ export function Sidebar({ className }: SidebarProps) {
     return section.items.some(item => location === item.href || location.startsWith(item.href + '/'));
   };
 
+  const StatusBadge = ({ status }: { status?: SectionStatus }) => {
+    if (!status) return null;
+    const styles: Record<SectionStatus, string> = {
+      C: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+      WIP: "bg-amber-100 text-amber-700 border border-amber-200",
+      TBD: "bg-slate-100 text-slate-500 border border-slate-200",
+    };
+    return (
+      <span className={cn("text-[9px] font-bold px-1 py-0.5 rounded leading-none shrink-0", styles[status])}>
+        ({status})
+      </span>
+    );
+  };
+
   return (
     <>
-      <div 
+      <div
         className={cn(
           "fixed inset-0 z-40 bg-black/50 lg:hidden",
           !collapsed ? "block" : "hidden"
         )}
         onClick={() => toggleSidebar()}
       />
-      
+
       <aside
         className={cn(
           "fixed top-0 left-0 z-50 flex h-full flex-col border-r border-slate-200 bg-white transition-all duration-300 ease-in-out lg:relative lg:z-0",
@@ -323,10 +353,10 @@ export function Sidebar({ className }: SidebarProps) {
           collapsed ? "justify-center px-2 py-4" : "justify-between px-4 py-4"
         )}>
           {collapsed ? (
-            <Button 
-              onClick={() => toggleSidebar()} 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              onClick={() => toggleSidebar()}
+              variant="ghost"
+              size="icon"
               className="hidden lg:flex"
               data-testid="button-sidebar-expand"
             >
@@ -342,10 +372,10 @@ export function Sidebar({ className }: SidebarProps) {
                   <h1 className="text-lg font-semibold text-slate-900 mt-1">HRMS</h1>
                 </div>
               </div>
-              <Button 
-                onClick={() => toggleSidebar()} 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                onClick={() => toggleSidebar()}
+                variant="ghost"
+                size="icon"
                 className="hidden lg:flex"
                 data-testid="button-sidebar-toggle"
               >
@@ -354,24 +384,24 @@ export function Sidebar({ className }: SidebarProps) {
             </>
           )}
         </div>
-        
+
         <nav ref={navRef} className="flex-1 py-3 overflow-y-auto sidebar-scrollbar">
           {filteredSections.map((section) => {
             const isOpen = openSections[section.id] ?? section.defaultOpen ?? false;
             const isActive = isSectionActive(section);
-            
+
             return (
               <div key={section.id} className="mb-1">
                 {collapsed ? (
                   <div className="px-2">
                     {section.items.slice(0, 1).map((item, j) => (
-                      <Link 
-                        key={j} 
+                      <Link
+                        key={j}
                         href={item.href}
                         className={cn(
                           "flex items-center justify-center p-2 my-1 rounded-md",
-                          location === item.href 
-                            ? "bg-teal-50 text-teal-700" 
+                          location === item.href
+                            ? "bg-teal-50 text-teal-700"
                             : "text-slate-600 hover:bg-slate-100"
                         )}
                         data-testid={`link-${section.id}`}
@@ -382,26 +412,27 @@ export function Sidebar({ className }: SidebarProps) {
                   </div>
                 ) : (
                   <Collapsible open={isOpen} onOpenChange={() => toggleSection(section.id)}>
-                    <CollapsibleTrigger 
+                    <CollapsibleTrigger
                       className={cn(
                         "flex items-center justify-between w-full px-3 py-2 mx-1 text-sm font-medium rounded-md transition-colors",
-                        isActive 
-                          ? "bg-teal-50 text-teal-700" 
+                        isActive
+                          ? "bg-teal-50 text-teal-700"
                           : "text-slate-700 hover:bg-slate-50"
                       )}
                       data-testid={`button-section-${section.id}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={cn(isActive ? "text-teal-600" : "text-slate-500")}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={cn("shrink-0", isActive ? "text-teal-600" : "text-slate-500")}>
                           {section.icon}
                         </div>
-                        <span className="text-sm">{section.title}</span>
+                        <span className="text-sm truncate">{section.title}</span>
+                        <StatusBadge status={section.status} />
                       </div>
-                      <ChevronDown 
+                      <ChevronDown
                         className={cn(
                           "h-4 w-4 text-slate-400 transition-transform duration-200",
                           isOpen && "rotate-180"
-                        )} 
+                        )}
                       />
                     </CollapsibleTrigger>
                     <CollapsibleContent className="mt-1">
@@ -409,13 +440,13 @@ export function Sidebar({ className }: SidebarProps) {
                         {section.items.map((item, j) => {
                           const isItemActive = location === item.href;
                           return (
-                            <Link 
-                              key={j} 
+                            <Link
+                              key={j}
                               href={item.href}
                               className={cn(
-                                "flex items-center gap-2 px-3 py-2 my-0.5 text-sm rounded-md transition-colors",
-                                isItemActive 
-                                  ? "bg-teal-100 text-teal-800 font-medium" 
+                                "flex items-center gap-2 px-3 py-1.5 my-0.5 text-sm rounded-md transition-colors",
+                                isItemActive
+                                  ? "bg-teal-100 text-teal-800 font-medium"
                                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                               )}
                               data-testid={`link-${item.href.replace(/\//g, '-').slice(1)}`}
@@ -426,7 +457,8 @@ export function Sidebar({ className }: SidebarProps) {
                               )}>
                                 {item.icon}
                               </div>
-                              <span>{item.title}</span>
+                              <span className="flex-1 truncate">{item.title}</span>
+                              <StatusBadge status={section.status} />
                             </Link>
                           );
                         })}
@@ -438,7 +470,7 @@ export function Sidebar({ className }: SidebarProps) {
             );
           })}
         </nav>
-        
+
         {user && (
           <div className="p-3 border-t border-slate-200">
             <div className="flex items-center">
@@ -446,7 +478,7 @@ export function Sidebar({ className }: SidebarProps) {
                 <AvatarImage src={user.photoUrl || ""} alt={`${user.firstName} ${user.lastName}`} />
                 <AvatarFallback className="text-sm">{getInitials(user)}</AvatarFallback>
               </Avatar>
-              
+
               {!collapsed && (
                 <div className="ml-3 mr-auto overflow-hidden">
                   <p className="text-sm font-medium text-slate-900 truncate">
@@ -455,11 +487,11 @@ export function Sidebar({ className }: SidebarProps) {
                   <p className="text-xs text-slate-500 capitalize">{user.role}</p>
                 </div>
               )}
-              
-              <Button 
-                onClick={handleLogout} 
-                variant="ghost" 
-                size="icon" 
+
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                size="icon"
                 className="ml-auto text-slate-500 hover:text-slate-700"
                 data-testid="button-logout"
               >

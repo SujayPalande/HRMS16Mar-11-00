@@ -9,6 +9,7 @@ import { Wallet, Download, IndianRupee, CheckCircle, Clock, Calendar, Building2,
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
@@ -36,8 +37,10 @@ export default function ReimbursementsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedReimbursement, setSelectedReimbursement] = useState<Reimbursement | null>(null);
-  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const { user } = useAuth();
+  const currentUserRole = user?.role || "employee";
   const [confirmAction, setConfirmAction] = useState<"process" | "paid" | null>(null);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
 
   const { data: employees = [] } = useQuery<User[]>({ queryKey: ['/api/employees'] });
   const reimbInitialized = useRef(false);
@@ -94,10 +97,16 @@ export default function ReimbursementsPage() {
     }
   };
 
+  const currentUserName = `${user?.firstName} ${user?.lastName}`;
+  const isHROrAdmin = ['hr', 'admin', 'manager', 'developer'].includes(currentUserRole);
+
   const filteredReimbursements = reimbursements.filter(item => {
+    // Data isolation: employees only see their own requests
+    if (!isHROrAdmin && item.employee !== currentUserName) return false;
+
     const matchesSearch = item.employee.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (item.claimId?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+      item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.claimId?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
     const matchesStatus = statusFilter === "all" || item.status.toLowerCase() === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -125,17 +134,17 @@ export default function ReimbursementsPage() {
   const confirmActionHandler = () => {
     if (selectedReimbursement && confirmAction) {
       if (confirmAction === "process") {
-        setReimbursements(reimbursements.map(r => 
-          r.id === selectedReimbursement.id 
-            ? { ...r, status: "Processing" as const } 
+        setReimbursements(reimbursements.map(r =>
+          r.id === selectedReimbursement.id
+            ? { ...r, status: "Processing" as const }
             : r
         ));
         toast({ title: "Processing Started", description: `Reimbursement for ${selectedReimbursement.employee} is now being processed` });
       } else if (confirmAction === "paid") {
         const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        setReimbursements(reimbursements.map(r => 
-          r.id === selectedReimbursement.id 
-            ? { ...r, status: "Paid" as const, paidDate: today, dueDate: undefined } 
+        setReimbursements(reimbursements.map(r =>
+          r.id === selectedReimbursement.id
+            ? { ...r, status: "Paid" as const, paidDate: today, dueDate: undefined }
             : r
         ));
         toast({ title: "Payment Completed", description: `₹${selectedReimbursement.approvedAmount.toLocaleString()} has been paid to ${selectedReimbursement.employee}` });
@@ -153,16 +162,16 @@ export default function ReimbursementsPage() {
 
   const handleExport = () => {
     const doc = new jsPDF();
-    
+
     doc.setFontSize(18);
     doc.setTextColor(0, 128, 128);
     doc.text("Reimbursement Report", 14, 22);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 30);
     doc.text(`Period: ${selectedMonth}`, 14, 36);
-    
+
     const tableData = filteredReimbursements.map((item, index) => [
       (index + 1).toString(),
       item.employee,
@@ -172,19 +181,19 @@ export default function ReimbursementsPage() {
       item.status,
       item.status === "Paid" ? (item.paidDate || "-") : (item.dueDate || "-")
     ]);
-    
+
     autoTable(doc, {
       head: [["Sr.", "Employee", "Category", "Claim Amount", "Approved Amount", "Status", "Date"]],
       body: tableData,
       startY: 42,
       theme: "grid",
-      headStyles: { 
-        fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', 
+      headStyles: {
+        fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold',
         lineWidth: 0.1, lineColor: [0, 0, 0], fontSize: 9, halign: 'center',
         cellPadding: 3
       },
-      styles: { 
-        fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 9, 
+      styles: {
+        fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 9,
         cellPadding: 2.5, lineWidth: 0.1, lineColor: [0, 0, 0]
       },
       columnStyles: {
@@ -195,11 +204,11 @@ export default function ReimbursementsPage() {
         6: { halign: 'center' }
       }
     });
-    
+
     const totalPending = reimbursements.filter(r => r.status === "Pending").reduce((sum, r) => sum + r.approvedAmount, 0);
     const totalProcessing = reimbursements.filter(r => r.status === "Processing").reduce((sum, r) => sum + r.approvedAmount, 0);
     const totalPaid = reimbursements.filter(r => r.status === "Paid").reduce((sum, r) => sum + r.approvedAmount, 0);
-    
+
     const finalY = (doc as any).lastAutoTable.finalY || 42;
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
@@ -207,7 +216,7 @@ export default function ReimbursementsPage() {
     doc.text(`Total Pending: ₹${totalPending.toLocaleString()}`, 14, finalY + 18);
     doc.text(`Total Processing: ₹${totalProcessing.toLocaleString()}`, 14, finalY + 24);
     doc.text(`Total Paid: ₹${totalPaid.toLocaleString()}`, 14, finalY + 30);
-    
+
     doc.save(`reimbursement-report-${selectedMonth.replace(" ", "-")}.pdf`);
     toast({ title: "Export Complete", description: "Reimbursement report has been downloaded" });
   };
@@ -283,8 +292,8 @@ export default function ReimbursementsPage() {
               <div className="flex flex-wrap gap-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder="Search..." 
+                  <Input
+                    placeholder="Search..."
                     className="pl-10 w-64"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -339,10 +348,10 @@ export default function ReimbursementsPage() {
                           <Button size="icon" variant="ghost" onClick={() => handleView(item)} data-testid={`button-view-${index}`}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {item.status === "Pending" && (
+                          {item.status === "Pending" && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
                             <Button size="sm" onClick={() => handleProcess(item)} data-testid={`button-process-${index}`}>Process</Button>
                           )}
-                          {item.status === "Processing" && (
+                          {item.status === "Processing" && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
                             <Button size="sm" onClick={() => handleMarkPaid(item)} data-testid={`button-complete-${index}`}>Mark Paid</Button>
                           )}
                         </div>
@@ -426,10 +435,10 @@ export default function ReimbursementsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsViewOpen(false)}>Close</Button>
-            {selectedReimbursement?.status === "Pending" && (
+            {selectedReimbursement?.status === "Pending" && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
               <Button onClick={() => { handleProcess(selectedReimbursement); setIsViewOpen(false); }}>Process Payment</Button>
             )}
-            {selectedReimbursement?.status === "Processing" && (
+            {selectedReimbursement?.status === "Processing" && (currentUserRole === 'hr' || currentUserRole === 'admin') && (
               <Button onClick={() => { handleMarkPaid(selectedReimbursement); setIsViewOpen(false); }}>Mark as Paid</Button>
             )}
           </DialogFooter>
@@ -448,7 +457,7 @@ export default function ReimbursementsPage() {
               )}
             </DialogTitle>
             <DialogDescription>
-              {confirmAction === "process" 
+              {confirmAction === "process"
                 ? `Are you sure you want to start processing the reimbursement for ${selectedReimbursement?.employee}?`
                 : `Are you sure you want to mark the payment of ₹${selectedReimbursement?.approvedAmount.toLocaleString()} as completed for ${selectedReimbursement?.employee}?`
               }

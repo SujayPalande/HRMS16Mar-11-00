@@ -9,27 +9,53 @@ class LeaveController {
         $db       = getDB();
         $userId   = isset($query['userId']) ? (int)$query['userId'] : null;
         $status   = $query['status'] ?? null;
+        $role     = $user['role'];
 
         if ($userId) {
+            // If they are checking a specific user, ensure they have access to that user
+            // (Simplicity: just check if they are checking themselves OR if they are HR/Admin)
+            if ($userId !== (int)$user['id'] && !in_array($role, ['admin', 'hr', 'manager', 'developer'])) {
+                Response::forbidden();
+            }
             $stmt = $db->prepare('SELECT * FROM leave_requests WHERE user_id=? ORDER BY created_at DESC');
             $stmt->execute([$userId]);
             Response::json(Auth::camelize($stmt->fetchAll()));
             return;
         }
 
+        // Build a scoped query
+        $sql = "SELECT lr.* FROM leave_requests lr 
+                JOIN users u ON u.id = lr.user_id 
+                LEFT JOIN departments d ON d.id = u.department_id";
+        $where = [];
+        $params = [];
+
         if ($status === 'pending') {
-            $stmt = $db->query("SELECT * FROM leave_requests WHERE status='pending' ORDER BY created_at DESC");
-            Response::json(Auth::camelize($stmt->fetchAll()));
-            return;
+            $where[] = "lr.status = 'pending'";
         }
 
-        if (in_array($user['role'], ['admin', 'hr'])) {
-            $stmt = $db->query('SELECT * FROM leave_requests ORDER BY created_at DESC');
-            Response::json(Auth::camelize($stmt->fetchAll()));
-            return;
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) {
+                $where[] = "lr.user_id = ?";
+                $params[] = $user['id'];
+            } else {
+                $where[] = "d.unit_id = ?";
+                $params[] = $authorizedUnit;
+            }
+        } elseif ($role === 'employee') {
+            $where[] = "lr.user_id = ?";
+            $params[] = $user['id'];
         }
 
-        Response::error('Missing query parameters or insufficient permissions');
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY lr.created_at DESC';
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        Response::json(Auth::camelize($stmt->fetchAll()));
     }
 
     public function create(array $user, array $body): void {
@@ -57,12 +83,25 @@ class LeaveController {
         try {
             $this->notify($db, $userId, 'leave_request', 'Leave Request Submitted',
                 "Your leave request from " . date('d/m/Y', strtotime($startDate)) . " to " . date('d/m/Y', strtotime($endDate)) . " has been submitted.", $id);
-            $empStmt = $db->prepare('SELECT first_name, last_name FROM users WHERE id=? LIMIT 1');
+            $empStmt = $db->prepare('SELECT first_name, last_name, d.unit_id FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id=? LIMIT 1');
             $empStmt->execute([$userId]);
             $emp = $empStmt->fetch();
-            $admins = $db->query("SELECT id FROM users WHERE role='admin' AND is_active=1")->fetchAll();
-            foreach ($admins as $admin) {
-                $this->notify($db, $admin['id'], 'leave_request', 'New Leave Request',
+            $unitId = $emp['unit_id'] ?? null;
+
+            // Notify Admins (all units) and HR of the SAME unit
+            $sql = "SELECT u.id FROM users u LEFT JOIN departments d ON d.id = u.department_id 
+                    WHERE u.role IN ('admin', 'developer', 'hr') AND u.is_active=1";
+            $params = [];
+            if ($unitId) {
+                $sql .= " AND (u.role IN ('admin', 'developer') OR d.unit_id = ?)";
+                $params[] = $unitId;
+            }
+            $notifiables = $db->prepare($sql);
+            $notifiables->execute($params);
+            
+            foreach ($notifiables->fetchAll() as $target) {
+                if ((int)$target['id'] === (int)$userId) continue;
+                $this->notify($db, (int)$target['id'], 'leave_request', 'New Leave Request',
                     "{$emp['first_name']} {$emp['last_name']} submitted a leave request.", $id, $userId);
             }
         } catch (Throwable $e) {

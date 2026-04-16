@@ -1,13 +1,15 @@
-import { 
+import {
   Unit, InsertUnit,
-  User, InsertUser, Department, InsertDepartment, 
+  User, InsertUser, Department, InsertDepartment,
   Attendance, InsertAttendance, LeaveRequest, InsertLeaveRequest,
   Holiday, InsertHoliday, Notification, InsertNotification,
   PaymentRecord, InsertPaymentRecord, EmployeeInvitation, InsertEmployeeInvitation,
   LeaveBalance,
   BankMaster, InsertBankMaster, CategoryMaster, InsertCategoryMaster,
   CompanyMaster, InsertCompanyMaster, CostCenter, InsertCostCenter,
-  DocumentApproval, InsertDocumentApproval, EmployeeDeduction, InsertEmployeeDeduction
+  DocumentApproval, InsertDocumentApproval, EmployeeDeduction, InsertEmployeeDeduction,
+  Certification, InsertCertification,
+  Goal, InsertGoal
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -41,21 +43,21 @@ export interface IStorage {
   updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
   getUsersByDepartment(departmentId: number): Promise<User[]>;
-  
+
   // Department methods
   getDepartment(id: number): Promise<Department | undefined>;
   getDepartments(): Promise<Department[]>;
   createDepartment(department: InsertDepartment): Promise<Department>;
   updateDepartment(id: number, department: Partial<Department>): Promise<Department | undefined>;
   deleteDepartment(id: number): Promise<boolean>;
-  
+
   // Attendance methods
   getAttendance(id: number): Promise<Attendance | undefined>;
   getAttendanceByUser(userId: number): Promise<Attendance[]>;
   getAttendanceByDate(date: Date): Promise<Attendance[]>;
   createAttendance(attendance: InsertAttendance): Promise<Attendance>;
   updateAttendance(id: number, attendance: Partial<Attendance>): Promise<Attendance | undefined>;
-  
+
   // Leave methods
   getLeaveRequest(id: number): Promise<LeaveRequest | undefined>;
   getLeaveRequestsByUser(userId: number): Promise<LeaveRequest[]>;
@@ -64,7 +66,7 @@ export interface IStorage {
   createLeaveRequest(leaveRequest: InsertLeaveRequest): Promise<LeaveRequest>;
   updateLeaveRequest(id: number, leaveRequest: Partial<LeaveRequest>): Promise<LeaveRequest | undefined>;
   deleteLeaveRequest(id: number): Promise<boolean>;
-  
+
   getSystemSettings(): Promise<any>;
 
   // Holiday methods
@@ -73,7 +75,7 @@ export interface IStorage {
   createHoliday(holiday: InsertHoliday): Promise<Holiday>;
   updateHoliday(id: number, holiday: Partial<Holiday>): Promise<Holiday | undefined>;
   deleteHoliday(id: number): Promise<boolean>;
-  
+
   // Notification methods
   getNotification(id: number): Promise<Notification | undefined>;
   getNotificationsByUser(userId: number): Promise<Notification[]>;
@@ -82,7 +84,7 @@ export interface IStorage {
   markNotificationAsRead(id: number): Promise<boolean>;
   markAllNotificationsAsRead(userId: number): Promise<boolean>;
   deleteNotification(id: number): Promise<boolean>;
-  
+
   // Employee invitation methods
   getEmployeeInvitation(id: number): Promise<EmployeeInvitation | undefined>;
   getEmployeeInvitationByToken(token: string): Promise<EmployeeInvitation | undefined>;
@@ -90,7 +92,7 @@ export interface IStorage {
   createEmployeeInvitation(invitation: InsertEmployeeInvitation): Promise<EmployeeInvitation>;
   updateEmployeeInvitation(id: number, invitation: Partial<EmployeeInvitation>): Promise<EmployeeInvitation | undefined>;
   deleteEmployeeInvitation(id: number): Promise<boolean>;
-  
+
   // Payment record methods
   getPaymentRecord(id: number): Promise<PaymentRecord | undefined>;
   getPaymentRecords(): Promise<PaymentRecord[]>;
@@ -98,11 +100,31 @@ export interface IStorage {
   getPaymentRecordsByMonth(month: string): Promise<PaymentRecord[]>;
   createPaymentRecord(paymentRecord: InsertPaymentRecord): Promise<PaymentRecord>;
   updatePaymentRecord(id: number, paymentRecord: Partial<PaymentRecord>): Promise<PaymentRecord | undefined>;
+
+  // Certification methods
+  getCertification(id: number): Promise<Certification | undefined>;
+  getCertifications(): Promise<Certification[]>;
+  getCertificationsByUser(userId: number): Promise<Certification[]>;
+  createCertification(certification: InsertCertification): Promise<Certification>;
+  updateCertification(id: number, certification: Partial<Certification>): Promise<Certification | undefined>;
+  deleteCertification(id: number): Promise<boolean>;
   deletePaymentRecord(id: number): Promise<boolean>;
-  
+
   // Leave balance calculation methods
   calculateLeaveBalance(userId: number, asOfDate?: Date): Promise<LeaveBalance>;
-  
+
+  // System settings
+  getSystemSettings(): Promise<any>;
+  updateSystemSettings(settings: any): Promise<any>;
+
+  // Goals methods
+  getGoals(): Promise<Goal[]>;
+  getGoalsByUser(userId: number): Promise<Goal[]>;
+  getGoal(id: number): Promise<Goal | undefined>;
+  createGoal(goal: InsertGoal): Promise<Goal>;
+  updateGoal(id: number, goal: Partial<Goal>): Promise<Goal | undefined>;
+  deleteGoal(id: number): Promise<boolean>;
+
   // Session store
   sessionStore: session.Store;
 }
@@ -123,7 +145,8 @@ export class MemStorage implements IStorage {
   private costCenters: Map<number, CostCenter>;
   private documentApprovals: Map<number, DocumentApproval>;
   private employeeDeductions: Map<number, EmployeeDeduction>;
-  
+  private goals: Map<number, Goal>;
+
   currentUnitId: number;
   currentUserId: number;
   currentDepartmentId: number;
@@ -139,6 +162,7 @@ export class MemStorage implements IStorage {
   currentCostCenterId: number;
   currentDocumentApprovalId: number;
   currentEmployeeDeductionId: number;
+  currentGoalId: number;
   sessionStore: session.Store;
 
   constructor() {
@@ -157,7 +181,8 @@ export class MemStorage implements IStorage {
     this.costCenters = new Map();
     this.documentApprovals = new Map();
     this.employeeDeductions = new Map();
-    
+    this.goals = new Map();
+
     this.currentUnitId = 1;
     this.currentUserId = 1;
     this.currentDepartmentId = 1;
@@ -173,11 +198,12 @@ export class MemStorage implements IStorage {
     this.currentCostCenterId = 1;
     this.currentDocumentApprovalId = 1;
     this.currentEmployeeDeductionId = 1;
-    
+    this.currentGoalId = 1;
+
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000 // prune expired entries every 24h
     });
-    
+
     // Initialize with sample units
     this.createUnit({
       code: "CB",
@@ -186,34 +212,34 @@ export class MemStorage implements IStorage {
     });
 
     // Initialize with sample departments
-    this.createDepartment({ 
+    this.createDepartment({
       code: "HR",
-      name: "Human Resources", 
+      name: "Human Resources",
       description: "Manages employee relations, hiring, and company policies",
       unitId: 1
     } as any);
-    this.createDepartment({ 
+    this.createDepartment({
       code: "ENG",
-      name: "Engineering", 
+      name: "Engineering",
       description: "Software development and technical operations",
       unitId: 1
     } as any);
-    this.createDepartment({ 
+    this.createDepartment({
       code: "MKT",
-      name: "Marketing", 
+      name: "Marketing",
       description: "Handles brand awareness and promotional activities",
       unitId: 1
     } as any);
-    this.createDepartment({ 
+    this.createDepartment({
       code: "FIN",
-      name: "Finance", 
+      name: "Finance",
       description: "Manages financial planning and accounting",
       unitId: 1
     } as any);
-    
+
     // Initialize with users for each role with pre-hashed passwords
     // Passwords are hashed in the same format as hashPassword in auth.ts
-    
+
     // Admin user - Password: admin123
     this.initializeUser({
       id: 1,
@@ -257,7 +283,7 @@ export class MemStorage implements IStorage {
       customPermissions: [],
       documents: []
     });
-    
+
     // HR user - Password: hr123
     this.initializeUser({
       id: 2,
@@ -301,7 +327,7 @@ export class MemStorage implements IStorage {
       customPermissions: [],
       documents: []
     });
-    
+
     // Manager user - Password: manager123
     this.initializeUser({
       id: 3,
@@ -345,7 +371,7 @@ export class MemStorage implements IStorage {
       customPermissions: [],
       documents: []
     });
-    
+
     // Regular employee - Password: employee123
     this.initializeUser({
       id: 4,
@@ -389,7 +415,7 @@ export class MemStorage implements IStorage {
       customPermissions: [],
       documents: []
     });
-    
+
     // Developer user - Password: dev11
     this.initializeUser({
       id: 5,
@@ -522,7 +548,7 @@ export class MemStorage implements IStorage {
       documents: []
     });
   }
-  
+
   // For initializing users with pre-hashed passwords
   private initializeUser(user: User) {
     this.users.set(user.id, user);
@@ -550,8 +576,8 @@ export class MemStorage implements IStorage {
 
   async createUnit(insertUnit: InsertUnit): Promise<Unit> {
     const id = this.currentUnitId++;
-    const unit: Unit = { 
-      ...insertUnit, 
+    const unit: Unit = {
+      ...insertUnit,
       id,
       description: insertUnit.description ?? null
     };
@@ -565,8 +591,8 @@ export class MemStorage implements IStorage {
 
   async createBankMaster(insertBank: InsertBankMaster): Promise<BankMaster> {
     const id = this.currentBankMasterId++;
-    const bank: BankMaster = { 
-      ...insertBank, 
+    const bank: BankMaster = {
+      ...insertBank,
       id,
       branchCode: insertBank.branchCode ?? null,
       address: insertBank.address ?? null,
@@ -595,8 +621,8 @@ export class MemStorage implements IStorage {
 
   async createCompanyMaster(insertCompany: InsertCompanyMaster): Promise<CompanyMaster> {
     const id = this.currentCompanyMasterId++;
-    const company: CompanyMaster = { 
-      ...insertCompany, 
+    const company: CompanyMaster = {
+      ...insertCompany,
       id,
       address: insertCompany.address ?? null,
       state: insertCompany.state ?? null,
@@ -628,14 +654,57 @@ export class MemStorage implements IStorage {
     return costCenter;
   }
 
+  // Goals methods
+  async getGoals(): Promise<Goal[]> {
+    return Array.from(this.goals.values());
+  }
+
+  async getGoalsByUser(userId: number): Promise<Goal[]> {
+    return Array.from(this.goals.values()).filter(g => g.userId === userId);
+  }
+
+  async getGoal(id: number): Promise<Goal | undefined> {
+    return this.goals.get(id);
+  }
+
+  async createGoal(goal: InsertGoal): Promise<Goal> {
+    const id = this.currentGoalId++;
+    const newGoal: Goal = {
+      id,
+      title: goal.title,
+      kpi: goal.kpi,
+      owner: goal.owner,
+      progress: goal.progress ?? 0,
+      dueDate: goal.dueDate instanceof Date ? goal.dueDate : new Date(goal.dueDate),
+      status: goal.status ?? 'On Track',
+      description: goal.description ?? null,
+      priority: goal.priority ?? 'medium',
+      userId: goal.userId,
+      createdAt: new Date(),
+    };
+    this.goals.set(id, newGoal);
+    return newGoal;
+  }
+
+  async updateGoal(id: number, updateData: Partial<Goal>): Promise<Goal | undefined> {
+    const existing = this.goals.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updateData };
+    this.goals.set(id, updated);
+    return updated;
+  }
+
+  async deleteGoal(id: number): Promise<boolean> {
+    return this.goals.delete(id);
+  }
   async getDocumentApprovals(): Promise<DocumentApproval[]> {
     return Array.from(this.documentApprovals.values());
   }
 
   async createDocumentApproval(insertApproval: InsertDocumentApproval): Promise<DocumentApproval> {
     const id = this.currentDocumentApprovalId++;
-    const approval: DocumentApproval = { 
-      ...insertApproval, 
+    const approval: DocumentApproval = {
+      ...insertApproval,
       id,
       status: insertApproval.status ?? 'pending',
       remarks: insertApproval.remarks ?? null
@@ -678,9 +747,9 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
-    const user: User = { 
-      ...insertUser, 
-      id, 
+    const user: User = {
+      ...insertUser,
+      id,
       joinDate: insertUser.joinDate || new Date(),
       isActive: true,
       role: insertUser.role || 'employee',
@@ -722,8 +791,8 @@ export class MemStorage implements IStorage {
     const user = this.users.get(id);
     if (!user) return undefined;
 
-    const updatedUser = { 
-      ...user, 
+    const updatedUser = {
+      ...user,
       ...userData,
       documents: userData.documents ?? user.documents ?? [],
       bankIFSCCode: userData.bankIFSCCode ?? user.bankIFSCCode ?? null,
@@ -735,7 +804,7 @@ export class MemStorage implements IStorage {
   async deleteUser(id: number): Promise<boolean> {
     return this.users.delete(id);
   }
-  
+
   async getUsersByDepartment(departmentId: number): Promise<User[]> {
     return Array.from(this.users.values()).filter(
       (user) => user.departmentId === departmentId,
@@ -753,8 +822,8 @@ export class MemStorage implements IStorage {
 
   async createDepartment(insertDepartment: InsertDepartment): Promise<Department> {
     const id = this.currentDepartmentId++;
-    const department: Department = { 
-      ...insertDepartment, 
+    const department: Department = {
+      ...insertDepartment,
       id,
       description: insertDepartment.description ?? null,
       manager: insertDepartment.manager ?? null,
@@ -768,9 +837,9 @@ export class MemStorage implements IStorage {
   async updateDepartment(id: number, departmentData: Partial<Department>): Promise<Department | undefined> {
     const department = this.departments.get(id);
     if (!department) return undefined;
-    
-    const updatedDepartment = { 
-      ...department, 
+
+    const updatedDepartment = {
+      ...department,
       ...departmentData,
       manager: departmentData.manager ?? department.manager ?? null,
       location: departmentData.location ?? department.location ?? null,
@@ -803,8 +872,8 @@ export class MemStorage implements IStorage {
 
   async createAttendance(insertAttendance: InsertAttendance): Promise<Attendance> {
     const id = this.currentAttendanceId++;
-    const attendance: Attendance = { 
-      ...insertAttendance, 
+    const attendance: Attendance = {
+      ...insertAttendance,
       id,
       date: insertAttendance.date ?? null,
       status: insertAttendance.status ?? 'present',
@@ -819,7 +888,7 @@ export class MemStorage implements IStorage {
   async updateAttendance(id: number, attendanceData: Partial<Attendance>): Promise<Attendance | undefined> {
     const attendance = this.attendanceRecords.get(id);
     if (!attendance) return undefined;
-    
+
     const updatedAttendance = { ...attendance, ...attendanceData };
     this.attendanceRecords.set(id, updatedAttendance);
     return updatedAttendance;
@@ -848,8 +917,8 @@ export class MemStorage implements IStorage {
 
   async createLeaveRequest(insertLeaveRequest: InsertLeaveRequest): Promise<LeaveRequest> {
     const id = this.currentLeaveRequestId++;
-    const leaveRequest: LeaveRequest = { 
-      ...insertLeaveRequest, 
+    const leaveRequest: LeaveRequest = {
+      ...insertLeaveRequest,
       id,
       status: insertLeaveRequest.status ?? 'pending',
       reason: insertLeaveRequest.reason ?? null,
@@ -863,7 +932,7 @@ export class MemStorage implements IStorage {
   async updateLeaveRequest(id: number, leaveRequestData: Partial<LeaveRequest>): Promise<LeaveRequest | undefined> {
     const leaveRequest = this.leaveRequests.get(id);
     if (!leaveRequest) return undefined;
-    
+
     const updatedLeaveRequest = { ...leaveRequest, ...leaveRequestData };
     this.leaveRequests.set(id, updatedLeaveRequest);
     return updatedLeaveRequest;
@@ -884,8 +953,8 @@ export class MemStorage implements IStorage {
 
   async createHoliday(insertHoliday: InsertHoliday): Promise<Holiday> {
     const id = this.currentHolidayId++;
-    const holiday: Holiday = { 
-      ...insertHoliday, 
+    const holiday: Holiday = {
+      ...insertHoliday,
       id,
       description: insertHoliday.description ?? null
     };
@@ -896,7 +965,7 @@ export class MemStorage implements IStorage {
   async updateHoliday(id: number, holidayData: Partial<Holiday>): Promise<Holiday | undefined> {
     const holiday = this.holidayRecords.get(id);
     if (!holiday) return undefined;
-    
+
     const updatedHoliday = { ...holiday, ...holidayData };
     this.holidayRecords.set(id, updatedHoliday);
     return updatedHoliday;
@@ -940,7 +1009,7 @@ export class MemStorage implements IStorage {
   async markNotificationAsRead(id: number): Promise<boolean> {
     const notification = this.notifications.get(id);
     if (!notification) return false;
-    
+
     const updatedNotification = { ...notification, isRead: true };
     this.notifications.set(id, updatedNotification);
     return true;
@@ -949,12 +1018,12 @@ export class MemStorage implements IStorage {
   async markAllNotificationsAsRead(userId: number): Promise<boolean> {
     const userNotifications = Array.from(this.notifications.entries())
       .filter(([_, notification]) => notification.userId === userId && !notification.isRead);
-    
+
     userNotifications.forEach(([id, notification]) => {
       const updatedNotification = { ...notification, isRead: true };
       this.notifications.set(id, updatedNotification);
     });
-    
+
     return true;
   }
 
@@ -990,7 +1059,7 @@ export class MemStorage implements IStorage {
       paymentMode: paymentRecord.paymentMode ?? null,
       referenceNo: paymentRecord.referenceNo ?? null,
     };
-    
+
     this.paymentRecords.set(id, newPaymentRecord);
     return newPaymentRecord;
   }
@@ -998,7 +1067,7 @@ export class MemStorage implements IStorage {
   async updatePaymentRecord(id: number, paymentRecord: Partial<PaymentRecord>): Promise<PaymentRecord | undefined> {
     const existing = this.paymentRecords.get(id);
     if (!existing) return undefined;
-    
+
     const updatedRecord = { ...existing, ...paymentRecord };
     this.paymentRecords.set(id, updatedRecord);
     return updatedRecord;
@@ -1023,8 +1092,8 @@ export class MemStorage implements IStorage {
 
   async createEmployeeInvitation(insertInvitation: InsertEmployeeInvitation): Promise<EmployeeInvitation> {
     const id = this.currentInvitationId++;
-    const invitation: EmployeeInvitation = { 
-      ...insertInvitation, 
+    const invitation: EmployeeInvitation = {
+      ...insertInvitation,
       id,
       usedAt: null,
       createdAt: new Date()
@@ -1036,7 +1105,7 @@ export class MemStorage implements IStorage {
   async updateEmployeeInvitation(id: number, invitationData: Partial<EmployeeInvitation>): Promise<EmployeeInvitation | undefined> {
     const invitation = this.employeeInvitations.get(id);
     if (!invitation) return undefined;
-    
+
     const updatedInvitation = { ...invitation, ...invitationData };
     this.employeeInvitations.set(id, updatedInvitation);
     return updatedInvitation;
@@ -1057,7 +1126,7 @@ export class MemStorage implements IStorage {
     // Use current date if no asOfDate provided
     const calculationDate = asOfDate || new Date();
     const joinDate = new Date(user.joinDate);
-    
+
     // Handle edge case: calculation date before join date
     if (calculationDate < joinDate) {
       throw new Error('Calculation date cannot be before join date');
@@ -1065,31 +1134,31 @@ export class MemStorage implements IStorage {
 
     // Calculate months worked from joinDate to asOfDate
     const monthsWorked = differenceInMonths(calculationDate, joinDate);
-    
+
     // Calculate total accrued days (1.5 days per month)
     const totalAccrued = monthsWorked * 1.5;
-    
+
     // Get all leave requests for this user
     const userLeaveRequests = await this.getLeaveRequestsByUser(userId);
-    
+
     // Filter for paid leave types that reduce balance
     const paidLeaveTypes = ['annual', 'sick', 'personal'];
-    const relevantLeaveRequests = userLeaveRequests.filter(request => 
+    const relevantLeaveRequests = userLeaveRequests.filter(request =>
       paidLeaveTypes.includes(request.type)
     );
-    
+
     // Calculate total taken (approved requests only)
     let totalTaken = 0;
     const approvedRequests = relevantLeaveRequests.filter(request => request.status === 'approved');
-    
+
     for (const request of approvedRequests) {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Calculate duration in days
-      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 : 
-                      Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      
+      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 :
+        Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
       // Apply leave type multiplier
       if (request.type === 'halfday') {
         totalTaken += 0.5;
@@ -1097,19 +1166,19 @@ export class MemStorage implements IStorage {
         totalTaken += duration;
       }
     }
-    
+
     // Calculate pending requests (pending status only)
     let pendingRequests = 0;
     const pendingRequestsList = relevantLeaveRequests.filter(request => request.status === 'pending');
-    
+
     for (const request of pendingRequestsList) {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Calculate duration in days
-      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 : 
-                      Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      
+      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 :
+        Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
       // Apply leave type multiplier
       if (request.type === 'halfday') {
         pendingRequests += 0.5;
@@ -1117,38 +1186,38 @@ export class MemStorage implements IStorage {
         pendingRequests += duration;
       }
     }
-    
+
     // Calculate remaining balance
     const remainingBalance = totalAccrued - totalTaken;
-    
+
     // Calculate next accrual date (first day of next month)
     const nextAccrualDate = addMonths(calculationDate, 1);
     nextAccrualDate.setDate(1); // Set to first day of month
-    
+
     // Calculate this year's accrual and taken amounts
     const yearStart = startOfYear(calculationDate);
     const yearEnd = endOfYear(calculationDate);
-    
+
     // Calculate months worked this year
     const yearStartForCalculation = joinDate > yearStart ? joinDate : yearStart;
     const monthsWorkedThisYear = differenceInMonths(calculationDate, yearStartForCalculation);
     const accruedThisYear = monthsWorkedThisYear * 1.5;
-    
+
     // Calculate taken this year (approved requests within this year)
     let takenThisYear = 0;
     const thisYearApprovedRequests = approvedRequests.filter(request => {
       const requestDate = new Date(request.startDate);
       return requestDate >= yearStart && requestDate <= yearEnd;
     });
-    
+
     for (const request of thisYearApprovedRequests) {
       const startDate = new Date(request.startDate);
       const endDate = new Date(request.endDate);
-      
+
       // Calculate duration in days
-      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 : 
-                      Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      
+      const duration = differenceInMonths(endDate, startDate) === 0 ? 1 :
+        Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
       // Apply leave type multiplier
       if (request.type === 'halfday') {
         takenThisYear += 0.5;
@@ -1156,7 +1225,7 @@ export class MemStorage implements IStorage {
         takenThisYear += duration;
       }
     }
-    
+
     return {
       asOfDate: calculationDate,
       totalAccrued,

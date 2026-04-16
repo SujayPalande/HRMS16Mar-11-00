@@ -525,9 +525,9 @@ export default function PayrollReportPage() {
         <div className="flex gap-4 mb-6">
           <div className="w-64">
             <Select value={selectedUnit} onValueChange={(val) => { setSelectedUnit(val); setSelectedDept("all"); }}>
-              <SelectTrigger><SelectValue placeholder="All Units" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Units</SelectItem>
+                {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                 {units.map(u => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>

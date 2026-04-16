@@ -6,7 +6,7 @@ require_once __DIR__ . '/../helpers/Response.php';
 class SettingsController {
 
     public function get(array $user): void {
-        if (!in_array($user['role'], ['admin', 'developer'])) Response::forbidden('Admin or Developer access required');
+        // Any authenticated user should be able to read general system settings
         Response::json($this->read());
     }
 

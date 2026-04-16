@@ -481,7 +481,7 @@ export default function AttendanceReportPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Units</SelectItem>
+                  {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                   {units.map((u: Unit) => (
                     <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                   ))}

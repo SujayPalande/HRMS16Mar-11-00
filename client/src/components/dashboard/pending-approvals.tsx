@@ -83,15 +83,20 @@ export function PendingApprovals({ pendingRequests = [], isPersonalView = false 
   };
   
   // Format date range
-  const formatDateRange = (start: string | Date, end: string | Date) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    
-    if (startDate.toDateString() === endDate.toDateString()) {
-      return format(startDate, 'MMM d, yyyy');
+  const formatDateRange = (start: string, end: string) => {
+    try {
+      if (!start) return 'N/A';
+      const startDate = new Date(start);
+      if (isNaN(startDate.getTime())) return start;
+      if (!end || start === end) {
+        return format(startDate, 'MMM d, yyyy');
+      }
+      const endDate = new Date(end);
+      if (isNaN(endDate.getTime())) return start;
+      return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
+    } catch {
+      return `${start} - ${end}`;
     }
-    
-    return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
   };
   
   // Get leave type display

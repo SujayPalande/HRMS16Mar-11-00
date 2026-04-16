@@ -60,32 +60,46 @@ class PayrollController {
         $month      = $query['month'] ?? null;
 
         $canViewAll  = Auth::hasPermission($user, 'payroll.view');
-        $canViewOwn  = Auth::hasPermission($user, 'payroll.view_own');
+        
+        $sql = "SELECT pr.* FROM payment_records pr 
+                JOIN users u ON u.id = pr.employee_id 
+                LEFT JOIN departments d ON d.id = u.department_id";
+        $where = [];
+        $params = [];
 
-        $stmt = null;
-        if ($canViewAll) {
-            if ($employeeId) {
-                $stmt = $db->prepare('SELECT * FROM payment_records WHERE employee_id=? ORDER BY created_at DESC');
-                $stmt->execute([$employeeId]);
-            } elseif ($month) {
-                $stmt = $db->prepare('SELECT * FROM payment_records WHERE month=? ORDER BY created_at DESC');
-                $stmt->execute([$month]);
+        // Multi-tenancy / Unit Isolation
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) {
+                $where[] = "pr.employee_id = ?";
+                $params[] = $user['id'];
             } else {
-                $stmt = $db->query('SELECT * FROM payment_records ORDER BY created_at DESC');
+                $where[] = "d.unit_id = ?";
+                $params[] = $authorizedUnit;
             }
-        } elseif ($canViewOwn) {
-            $stmt = $db->prepare('SELECT * FROM payment_records WHERE employee_id=? ORDER BY created_at DESC');
-            $stmt->execute([$user['id']]);
+        } elseif (!$canViewAll) {
+            $where[] = "pr.employee_id = ?";
+            $params[] = $user['id'];
         }
 
-        if (!$stmt) Response::forbidden();
-
-        $records = $stmt->fetchAll();
-        if (!$canViewAll && $month) {
-            $records = array_values(array_filter($records, fn($r) => $r['month'] === $month));
+        // Filters
+        if ($employeeId) {
+            $where[] = "pr.employee_id = ?";
+            $params[] = $employeeId;
+        }
+        if ($month) {
+            $where[] = "pr.month = ?";
+            $params[] = $month;
         }
 
-        Response::json(Auth::camelize($records));
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY pr.created_at DESC';
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        Response::json(Auth::camelize($stmt->fetchAll()));
     }
 
     public function createPaymentRecord(array $user, array $body): void {
@@ -97,12 +111,23 @@ class PayrollController {
             $paymentDate = date('Y-m-d H:i:s', strtotime($paymentDate));
         }
 
+        $empId = (int)($body['employeeId'] ?? 0);
+
+        // Unit Authorization Check
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            if ($authorizedUnit === false) Response::forbidden();
+            $checkStmt = $db->prepare("SELECT d.unit_id FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id=?");
+            $checkStmt->execute([$empId]);
+            if ($checkStmt->fetchColumn() != $authorizedUnit) Response::forbidden('Target employee is not in your authorized unit');
+        }
+
         $stmt = $db->prepare(
             'INSERT INTO payment_records (employee_id, month, payment_status, amount, payment_date, payment_mode, reference_no, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, NOW())'
         );
         $stmt->execute([
-            (int)($body['employeeId']    ?? 0),
+            $empId,
             $body['month']               ?? '',
             $body['paymentStatus']       ?? 'pending',
             (int)($body['amount']        ?? 0),
@@ -119,6 +144,14 @@ class PayrollController {
     public function updatePaymentRecord(array $user, int $id, array $body): void {
         if (!Auth::hasPermission($user, 'payroll.process')) Response::forbidden();
         $db   = getDB();
+
+        // Unit Authorization Check
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            $checkStmt = $db->prepare("SELECT d.unit_id FROM payment_records pr JOIN users u ON u.id = pr.employee_id JOIN departments d ON d.id = u.department_id WHERE pr.id=?");
+            $checkStmt->execute([$id]);
+            if ($checkStmt->fetchColumn() != $authorizedUnit) Response::forbidden('This record belongs to an employee outside your authorized unit');
+        }
 
         if (isset($body['paymentDate']) && $body['paymentDate']) {
             $body['paymentDate'] = date('Y-m-d H:i:s', strtotime($body['paymentDate']));
@@ -142,6 +175,15 @@ class PayrollController {
     public function deletePaymentRecord(array $user, int $id): void {
         if (!Auth::hasPermission($user, 'payroll.process')) Response::forbidden();
         $db   = getDB();
+
+        // Unit Authorization Check
+        $authorizedUnit = Auth::getAuthorizedUnitId($user);
+        if ($authorizedUnit !== null) {
+            $checkStmt = $db->prepare("SELECT d.unit_id FROM payment_records pr JOIN users u ON u.id = pr.employee_id JOIN departments d ON d.id = u.department_id WHERE pr.id=?");
+            $checkStmt->execute([$id]);
+            if ($checkStmt->fetchColumn() != $authorizedUnit) Response::forbidden('This record belongs to an employee outside your authorized unit');
+        }
+
         $stmt = $db->prepare('DELETE FROM payment_records WHERE id=?');
         $stmt->execute([$id]);
         if ($stmt->rowCount() === 0) Response::notFound('Payment record not found');

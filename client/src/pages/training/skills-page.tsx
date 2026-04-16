@@ -255,10 +255,10 @@ export default function SkillMatrixPage() {
                 </div>
                 <Select value={unitFilter} onValueChange={setUnitFilter}>
                   <SelectTrigger className="w-full sm:w-36" data-testid="select-unit-filter">
-                    <SelectValue placeholder="Unit" />
+                    <SelectValue placeholder={units?.length === 1 ? (units && units[0] ? units[0].name : "Unit") : "Unit"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Units</SelectItem>
+                    {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                     {units.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                     ))}

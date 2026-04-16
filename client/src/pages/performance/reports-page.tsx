@@ -184,10 +184,10 @@ export default function PerformanceReportsPage() {
           <div className="flex flex-wrap gap-2">
             <Select value={filterUnit} onValueChange={setFilterUnit}>
               <SelectTrigger className="w-36" data-testid="select-filter-unit">
-                <SelectValue placeholder="All Units" />
+                <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Units</SelectItem>
+                {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                 {units.map(u => (
                   <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                 ))}

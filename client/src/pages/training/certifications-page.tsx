@@ -11,9 +11,34 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format } from "date-fns";
+import { useAuth } from "@/hooks/use-auth";
+
+interface CertificationRecord {
+  id: number;
+  userId: number;
+  certificationName: string;
+  issuer: string;
+  issueDate: string | Date;
+  expiryDate: string | Date | null;
+  status: string;
+  credentialId: string | null;
+  createdAt?: string | Date | null;
+}
+
+interface EmployeeRecord {
+  id: number;
+  firstName: string;
+  lastName: string;
+}
 
 export default function CertificationsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isHROrAdmin = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'developer';
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -21,24 +46,64 @@ export default function CertificationsPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRenewDialog, setShowRenewDialog] = useState(false);
-  const [selectedCert, setSelectedCert] = useState<any>(null);
+  const [selectedCert, setSelectedCert] = useState<CertificationRecord | null>(null);
 
   const [formData, setFormData] = useState({
-    employee: "",
-    certification: "",
+    userId: user?.id?.toString() ?? "",
+    certificationName: "",
     issuer: "",
     issueDate: "",
     expiryDate: "",
     credentialId: ""
   });
 
-  const [certifications, setCertifications] = useState([
-    { id: 1, employee: "John Doe", certification: "AWS Solutions Architect", issuer: "Amazon", issueDate: "Jan 2023", expiryDate: "Jan 2026", status: "Active", credentialId: "AWS-SA-12345" },
-    { id: 2, employee: "Jane Smith", certification: "Google Analytics", issuer: "Google", issueDate: "Mar 2023", expiryDate: "Mar 2024", status: "Expiring Soon", credentialId: "GA-78901" },
-    { id: 3, employee: "Mike Johnson", certification: "PMP", issuer: "PMI", issueDate: "Jun 2022", expiryDate: "Jun 2025", status: "Active", credentialId: "PMP-456789" },
-    { id: 4, employee: "Sarah Wilson", certification: "SHRM-CP", issuer: "SHRM", issueDate: "Sep 2021", expiryDate: "Sep 2024", status: "Active", credentialId: "SHRM-123456" },
-    { id: 5, employee: "Tom Brown", certification: "CFA Level 1", issuer: "CFA Institute", issueDate: "Dec 2020", expiryDate: "Dec 2023", status: "Expired", credentialId: "CFA-789012" },
-  ]);
+  const { data: employees = [] } = useQuery<EmployeeRecord[]>({
+    queryKey: ["/api/employees"],
+  });
+
+  const { data: certifications = [], isLoading } = useQuery<CertificationRecord[]>({
+    queryKey: ["/api/certifications"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/certifications", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/certifications"] });
+      setShowAddDialog(false);
+      resetForm();
+      toast({ title: "Success", description: "Certification added successfully" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to add certification", variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PUT", `/api/certifications/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/certifications"] });
+      setShowEditDialog(false);
+      setShowRenewDialog(false);
+      setSelectedCert(null);
+      resetForm();
+      toast({ title: "Success", description: "Certification updated successfully" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to update certification", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/certifications/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/certifications"] });
+      setShowDeleteDialog(false);
+      setSelectedCert(null);
+      toast({ title: "Success", description: "Certification deleted successfully" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to delete certification", variant: "destructive" }),
+  });
+
+  const getEmployeeName = (userId: number) => {
+    const emp = employees.find((e: EmployeeRecord) => e.id === userId);
+    return emp ? `${emp.firstName} ${emp.lastName}` : `Employee #${userId}`;
+  };
 
   const certStats = [
     { title: "Total Certifications", value: certifications.length.toString(), icon: <Award className="h-5 w-5" /> },
@@ -48,9 +113,10 @@ export default function CertificationsPage() {
   ];
 
   const filteredCertifications = certifications.filter(cert => {
-    const matchesSearch = cert.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          cert.certification.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          cert.issuer.toLowerCase().includes(searchQuery.toLowerCase());
+    const employeeName = getEmployeeName(cert.userId);
+    const matchesSearch = employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cert.certificationName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cert.issuer.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || cert.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -64,83 +130,73 @@ export default function CertificationsPage() {
     }
   };
 
+  const formatDate = (date: string | Date | null | undefined) => {
+    if (!date) return "—";
+    try { return format(new Date(date), "dd MMM yyyy"); } catch { return String(date); }
+  };
+
   const handleAddCert = () => {
-    if (!formData.employee || !formData.certification || !formData.issuer) {
+    if (!formData.certificationName || !formData.issuer || !formData.issueDate) {
       toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    const newCert = {
-      id: certifications.length + 1,
-      employee: formData.employee,
-      certification: formData.certification,
+    createMutation.mutate({
+      userId: parseInt(formData.userId) || user?.id,
+      certificationName: formData.certificationName,
       issuer: formData.issuer,
-      issueDate: formData.issueDate,
-      expiryDate: formData.expiryDate,
+      issueDate: new Date(formData.issueDate),
+      expiryDate: formData.expiryDate ? new Date(formData.expiryDate) : null,
+      credentialId: formData.credentialId || null,
       status: "Active",
-      credentialId: formData.credentialId
-    };
-    setCertifications([...certifications, newCert]);
-    setShowAddDialog(false);
-    resetForm();
-    toast({ title: "Success", description: "Certification added successfully" });
+    });
   };
 
   const handleEditCert = () => {
     if (!selectedCert) return;
-    const updatedCerts = certifications.map(cert =>
-      cert.id === selectedCert.id ? {
-        ...cert,
-        employee: formData.employee,
-        certification: formData.certification,
+    updateMutation.mutate({
+      id: selectedCert.id,
+      data: {
+        certificationName: formData.certificationName,
         issuer: formData.issuer,
-        issueDate: formData.issueDate,
-        expiryDate: formData.expiryDate,
-        credentialId: formData.credentialId
-      } : cert
-    );
-    setCertifications(updatedCerts);
-    setShowEditDialog(false);
-    resetForm();
-    toast({ title: "Success", description: "Certification updated successfully" });
+        issueDate: new Date(formData.issueDate),
+        expiryDate: formData.expiryDate ? new Date(formData.expiryDate) : null,
+        credentialId: formData.credentialId || null,
+      }
+    });
   };
 
   const handleDeleteCert = () => {
     if (!selectedCert) return;
-    setCertifications(certifications.filter(c => c.id !== selectedCert.id));
-    setShowDeleteDialog(false);
-    setSelectedCert(null);
-    toast({ title: "Success", description: "Certification deleted successfully" });
+    deleteMutation.mutate(selectedCert.id);
   };
 
   const handleRenewCert = () => {
-    if (!selectedCert) return;
-    const updatedCerts = certifications.map(cert =>
-      cert.id === selectedCert.id ? { ...cert, status: "Active", expiryDate: formData.expiryDate || cert.expiryDate } : cert
-    );
-    setCertifications(updatedCerts);
-    setShowRenewDialog(false);
-    setSelectedCert(null);
-    toast({ title: "Success", description: "Certification renewed successfully" });
+    if (!selectedCert || !formData.expiryDate) return;
+    updateMutation.mutate({
+      id: selectedCert.id,
+      data: { status: "Active", expiryDate: new Date(formData.expiryDate) }
+    });
   };
 
-  const handleDownloadCert = (cert: any) => {
+  const handleDownloadCert = (cert: CertificationRecord) => {
+    const employeeName = getEmployeeName(cert.userId);
     const doc = new jsPDF();
     doc.setFontSize(20);
     doc.text("Certificate of Completion", 105, 30, { align: "center" });
     doc.setFontSize(14);
     doc.text(`This is to certify that`, 105, 60, { align: "center" });
     doc.setFontSize(18);
-    doc.text(cert.employee, 105, 75, { align: "center" });
+    doc.text(employeeName, 105, 75, { align: "center" });
     doc.setFontSize(14);
     doc.text(`has successfully completed`, 105, 95, { align: "center" });
     doc.setFontSize(16);
-    doc.text(cert.certification, 105, 110, { align: "center" });
+    doc.text(cert.certificationName, 105, 110, { align: "center" });
     doc.setFontSize(12);
     doc.text(`Issued by: ${cert.issuer}`, 105, 135, { align: "center" });
-    doc.text(`Issue Date: ${cert.issueDate}`, 105, 145, { align: "center" });
-    doc.text(`Expiry Date: ${cert.expiryDate}`, 105, 155, { align: "center" });
-    doc.text(`Credential ID: ${cert.credentialId}`, 105, 165, { align: "center" });
-    doc.save(`${cert.employee}-${cert.certification}.pdf`);
+    doc.text(`Issue Date: ${formatDate(cert.issueDate)}`, 105, 145, { align: "center" });
+    doc.text(`Expiry Date: ${formatDate(cert.expiryDate)}`, 105, 155, { align: "center" });
+    if (cert.credentialId) doc.text(`Credential ID: ${cert.credentialId}`, 105, 165, { align: "center" });
+    doc.save(`${employeeName}-${cert.certificationName}.pdf`);
     toast({ title: "Success", description: "Certificate downloaded" });
   };
 
@@ -154,15 +210,12 @@ export default function CertificationsPage() {
 
     let yPos = 60;
     filteredCertifications.forEach((cert, index) => {
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = 20;
-      }
+      if (yPos > 270) { doc.addPage(); yPos = 20; }
       doc.setFontSize(12);
-      doc.text(`${index + 1}. ${cert.employee} - ${cert.certification}`, 20, yPos);
+      doc.text(`${index + 1}. ${getEmployeeName(cert.userId)} - ${cert.certificationName}`, 20, yPos);
       yPos += 7;
       doc.setFontSize(10);
-      doc.text(`   Issuer: ${cert.issuer} | Status: ${cert.status} | Expires: ${cert.expiryDate}`, 20, yPos);
+      doc.text(`   Issuer: ${cert.issuer} | Status: ${cert.status} | Expires: ${formatDate(cert.expiryDate)}`, 20, yPos);
       yPos += 10;
     });
 
@@ -171,18 +224,18 @@ export default function CertificationsPage() {
   };
 
   const resetForm = () => {
-    setFormData({ employee: "", certification: "", issuer: "", issueDate: "", expiryDate: "", credentialId: "" });
+    setFormData({ userId: user?.id?.toString() ?? "", certificationName: "", issuer: "", issueDate: "", expiryDate: "", credentialId: "" });
   };
 
-  const openEditDialog = (cert: any) => {
+  const openEditDialog = (cert: CertificationRecord) => {
     setSelectedCert(cert);
     setFormData({
-      employee: cert.employee,
-      certification: cert.certification,
+      userId: cert.userId.toString(),
+      certificationName: cert.certificationName,
       issuer: cert.issuer,
-      issueDate: cert.issueDate,
-      expiryDate: cert.expiryDate,
-      credentialId: cert.credentialId
+      issueDate: cert.issueDate ? format(new Date(cert.issueDate), "yyyy-MM-dd") : "",
+      expiryDate: cert.expiryDate ? format(new Date(cert.expiryDate), "yyyy-MM-dd") : "",
+      credentialId: cert.credentialId ?? ""
     });
     setShowEditDialog(true);
   };
@@ -204,21 +257,18 @@ export default function CertificationsPage() {
               <Download className="h-4 w-4" />
               Export Report
             </Button>
-            <Button className="gap-2" data-testid="button-add-cert" onClick={() => { resetForm(); setShowAddDialog(true); }}>
-              <Plus className="h-4 w-4" />
-              Add Certification
-            </Button>
+            {isHROrAdmin && (
+              <Button className="gap-2" data-testid="button-add-cert" onClick={() => { resetForm(); setShowAddDialog(true); }}>
+                <Plus className="h-4 w-4" />
+                Add Certification
+              </Button>
+            )}
           </div>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {certStats.map((stat, index) => (
-            <motion.div
-              key={stat.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
+            <motion.div key={stat.title} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
               <Card data-testid={`card-stat-${index}`}>
                 <CardContent className="p-6">
                   <div className="flex items-center gap-4">
@@ -249,13 +299,7 @@ export default function CertificationsPage() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Search..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                    data-testid="input-search"
-                  />
+                  <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search" />
                 </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
@@ -273,60 +317,68 @@ export default function CertificationsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b dark:border-slate-700">
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Employee</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Certification</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Issuer</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Issue Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Expiry Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCertifications.length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-8 text-slate-500">No certifications found</td></tr>
-                  ) : (
-                    filteredCertifications.map((cert, index) => (
-                      <tr key={cert.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50" data-testid={`row-cert-${index}`}>
-                        <td className="py-3 px-4 font-medium">{cert.employee}</td>
-                        <td className="py-3 px-4">{cert.certification}</td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{cert.issuer}</td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{cert.issueDate}</td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{cert.expiryDate}</td>
-                        <td className="py-3 px-4">
-                          <Badge className={getStatusColor(cert.status)}>{cert.status}</Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" data-testid={`button-view-${index}`} onClick={() => { setSelectedCert(cert); setShowViewDialog(true); }}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" data-testid={`button-edit-${index}`} onClick={() => openEditDialog(cert)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" data-testid={`button-download-${index}`} onClick={() => handleDownloadCert(cert)}>
-                              <Download className="h-4 w-4" />
-                            </Button>
-                            {(cert.status === "Expired" || cert.status === "Expiring Soon") && (
-                              <Button size="icon" variant="ghost" data-testid={`button-renew-${index}`} onClick={() => { setSelectedCert(cert); setShowRenewDialog(true); }}>
-                                <RefreshCw className="h-4 w-4" />
+            {isLoading ? (
+              <div className="text-center py-8 text-slate-500">Loading certifications...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b dark:border-slate-700">
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Employee</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Certification</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Issuer</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Issue Date</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Expiry Date</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Status</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-600 dark:text-slate-400">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCertifications.length === 0 ? (
+                      <tr><td colSpan={7} className="text-center py-8 text-slate-500">No certifications found</td></tr>
+                    ) : (
+                      filteredCertifications.map((cert, index) => (
+                        <tr key={cert.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50" data-testid={`row-cert-${index}`}>
+                          <td className="py-3 px-4 font-medium">{getEmployeeName(cert.userId)}</td>
+                          <td className="py-3 px-4">{cert.certificationName}</td>
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{cert.issuer}</td>
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{formatDate(cert.issueDate)}</td>
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400">{formatDate(cert.expiryDate)}</td>
+                          <td className="py-3 px-4">
+                            <Badge className={getStatusColor(cert.status)}>{cert.status}</Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex gap-1">
+                              <Button size="icon" variant="ghost" data-testid={`button-view-${index}`} onClick={() => { setSelectedCert(cert); setShowViewDialog(true); }}>
+                                <Eye className="h-4 w-4" />
                               </Button>
-                            )}
-                            <Button size="icon" variant="ghost" data-testid={`button-delete-${index}`} onClick={() => { setSelectedCert(cert); setShowDeleteDialog(true); }}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                              {isHROrAdmin && (
+                                <Button size="icon" variant="ghost" data-testid={`button-edit-${index}`} onClick={() => openEditDialog(cert)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button size="icon" variant="ghost" data-testid={`button-download-${index}`} onClick={() => handleDownloadCert(cert)}>
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              {isHROrAdmin && (cert.status === "Expired" || cert.status === "Expiring Soon") && (
+                                <Button size="icon" variant="ghost" data-testid={`button-renew-${index}`} onClick={() => { setSelectedCert(cert); setShowRenewDialog(true); }}>
+                                  <RefreshCw className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {isHROrAdmin && (
+                                <Button size="icon" variant="ghost" data-testid={`button-delete-${index}`} onClick={() => { setSelectedCert(cert); setShowDeleteDialog(true); }}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -339,36 +391,47 @@ export default function CertificationsPage() {
             <DialogDescription>Record a new employee certification</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {isHROrAdmin && (
+              <div>
+                <Label>Employee *</Label>
+                <Select value={formData.userId} onValueChange={(val) => setFormData({ ...formData, userId: val })}>
+                  <SelectTrigger data-testid="select-employee">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((emp: EmployeeRecord) => (
+                      <SelectItem key={emp.id} value={emp.id.toString()}>{emp.firstName} {emp.lastName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
-              <Label>Employee Name *</Label>
-              <Input value={formData.employee} onChange={(e) => setFormData({...formData, employee: e.target.value})} placeholder="Employee name" data-testid="input-employee" />
-            </div>
-            <div>
-              <Label>Certification *</Label>
-              <Input value={formData.certification} onChange={(e) => setFormData({...formData, certification: e.target.value})} placeholder="Certification name" data-testid="input-certification" />
+              <Label>Certification Name *</Label>
+              <Input value={formData.certificationName} onChange={(e) => setFormData({ ...formData, certificationName: e.target.value })} placeholder="Certification name" data-testid="input-certification" />
             </div>
             <div>
               <Label>Issuer *</Label>
-              <Input value={formData.issuer} onChange={(e) => setFormData({...formData, issuer: e.target.value})} placeholder="Issuing organization" data-testid="input-issuer" />
+              <Input value={formData.issuer} onChange={(e) => setFormData({ ...formData, issuer: e.target.value })} placeholder="Issuing organization" data-testid="input-issuer" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Issue Date</Label>
-                <Input type="date" value={formData.issueDate} onChange={(e) => setFormData({...formData, issueDate: e.target.value})} data-testid="input-issue-date" />
+                <Label>Issue Date *</Label>
+                <Input type="date" value={formData.issueDate} onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })} data-testid="input-issue-date" />
               </div>
               <div>
                 <Label>Expiry Date</Label>
-                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({...formData, expiryDate: e.target.value})} data-testid="input-expiry-date" />
+                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} data-testid="input-expiry-date" />
               </div>
             </div>
             <div>
               <Label>Credential ID</Label>
-              <Input value={formData.credentialId} onChange={(e) => setFormData({...formData, credentialId: e.target.value})} placeholder="Credential/Certificate ID" data-testid="input-credential-id" />
+              <Input value={formData.credentialId} onChange={(e) => setFormData({ ...formData, credentialId: e.target.value })} placeholder="Credential/Certificate ID" data-testid="input-credential-id" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
-            <Button onClick={handleAddCert} data-testid="button-submit-cert">Add Certification</Button>
+            <Button onClick={handleAddCert} data-testid="button-submit-cert" disabled={createMutation.isPending}>Add Certification</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -377,7 +440,7 @@ export default function CertificationsPage() {
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{selectedCert?.certification}</DialogTitle>
+            <DialogTitle>{selectedCert?.certificationName}</DialogTitle>
             <DialogDescription>Certification details</DialogDescription>
           </DialogHeader>
           {selectedCert && (
@@ -385,7 +448,7 @@ export default function CertificationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-slate-500">Employee</p>
-                  <p className="font-medium">{selectedCert.employee}</p>
+                  <p className="font-medium">{getEmployeeName(selectedCert.userId)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">Status</p>
@@ -399,24 +462,24 @@ export default function CertificationsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">Credential ID</p>
-                  <p className="font-medium">{selectedCert.credentialId}</p>
+                  <p className="font-medium">{selectedCert.credentialId || "—"}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-slate-500">Issue Date</p>
-                  <p className="font-medium">{selectedCert.issueDate}</p>
+                  <p className="font-medium">{formatDate(selectedCert.issueDate)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">Expiry Date</p>
-                  <p className="font-medium">{selectedCert.expiryDate}</p>
+                  <p className="font-medium">{formatDate(selectedCert.expiryDate)}</p>
                 </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowViewDialog(false)}>Close</Button>
-            <Button onClick={() => handleDownloadCert(selectedCert)}>Download</Button>
+            <Button onClick={() => handleDownloadCert(selectedCert!)}>Download</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -430,35 +493,31 @@ export default function CertificationsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Employee Name *</Label>
-              <Input value={formData.employee} onChange={(e) => setFormData({...formData, employee: e.target.value})} data-testid="input-edit-employee" />
-            </div>
-            <div>
-              <Label>Certification *</Label>
-              <Input value={formData.certification} onChange={(e) => setFormData({...formData, certification: e.target.value})} data-testid="input-edit-certification" />
+              <Label>Certification Name *</Label>
+              <Input value={formData.certificationName} onChange={(e) => setFormData({ ...formData, certificationName: e.target.value })} data-testid="input-edit-certification" />
             </div>
             <div>
               <Label>Issuer *</Label>
-              <Input value={formData.issuer} onChange={(e) => setFormData({...formData, issuer: e.target.value})} data-testid="input-edit-issuer" />
+              <Input value={formData.issuer} onChange={(e) => setFormData({ ...formData, issuer: e.target.value })} data-testid="input-edit-issuer" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Issue Date</Label>
-                <Input type="date" value={formData.issueDate} onChange={(e) => setFormData({...formData, issueDate: e.target.value})} />
+                <Input type="date" value={formData.issueDate} onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })} />
               </div>
               <div>
                 <Label>Expiry Date</Label>
-                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({...formData, expiryDate: e.target.value})} />
+                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
               </div>
             </div>
             <div>
               <Label>Credential ID</Label>
-              <Input value={formData.credentialId} onChange={(e) => setFormData({...formData, credentialId: e.target.value})} />
+              <Input value={formData.credentialId} onChange={(e) => setFormData({ ...formData, credentialId: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
-            <Button onClick={handleEditCert} data-testid="button-update-cert">Update Certification</Button>
+            <Button onClick={handleEditCert} data-testid="button-update-cert" disabled={updateMutation.isPending}>Update Certification</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -468,17 +527,17 @@ export default function CertificationsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Renew Certification</DialogTitle>
-            <DialogDescription>Renew "{selectedCert?.certification}" for {selectedCert?.employee}</DialogDescription>
+            <DialogDescription>Renew "{selectedCert?.certificationName}" for {selectedCert ? getEmployeeName(selectedCert.userId) : ""}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>New Expiry Date</Label>
-              <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({...formData, expiryDate: e.target.value})} data-testid="input-renew-date" />
+              <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} data-testid="input-renew-date" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRenewDialog(false)}>Cancel</Button>
-            <Button onClick={handleRenewCert} data-testid="button-confirm-renew">Renew Certification</Button>
+            <Button onClick={handleRenewCert} data-testid="button-confirm-renew" disabled={updateMutation.isPending}>Renew Certification</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -488,11 +547,13 @@ export default function CertificationsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Certification</DialogTitle>
-            <DialogDescription>Are you sure you want to delete "{selectedCert?.certification}" for {selectedCert?.employee}? This action cannot be undone.</DialogDescription>
+            <DialogDescription>
+              Are you sure you want to delete "{selectedCert?.certificationName}" for {selectedCert ? getEmployeeName(selectedCert.userId) : ""}? This action cannot be undone.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteCert} data-testid="button-confirm-delete">Delete</Button>
+            <Button variant="destructive" onClick={handleDeleteCert} data-testid="button-confirm-delete" disabled={deleteMutation.isPending}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

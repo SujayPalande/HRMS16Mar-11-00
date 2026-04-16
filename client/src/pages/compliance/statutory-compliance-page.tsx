@@ -582,10 +582,10 @@ export default function StatutoryCompliancePage() {
               <Label>Unit</Label>
               <Select value={selectedUnit} onValueChange={setSelectedUnit}>
                 <SelectTrigger className="w-40" data-testid="select-unit">
-                  <SelectValue placeholder="All Units" />
+                  <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Units</SelectItem>
+                  {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                   {units.map((u: any) => (
                     <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>
                   ))}

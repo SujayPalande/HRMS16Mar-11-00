@@ -513,3 +513,48 @@ export const leaveBalanceResponseSchema = z.object({
 });
 
 export type LeaveBalanceResponse = z.infer<typeof leaveBalanceResponseSchema>;
+
+// Certification schema
+export const certifications = pgTable("certifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  certificationName: text("certification_name").notNull(),
+  issuer: text("issuer").notNull(),
+  issueDate: timestamp("issue_date").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  status: text("status").notNull().default('Active'), // Active, Expiring Soon, Expired
+  credentialId: text("credential_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCertificationSchema = createInsertSchema(certifications).pick({
+  userId: true,
+  certificationName: true,
+  issuer: true,
+  issueDate: true,
+  expiryDate: true,
+  status: true,
+  credentialId: true,
+});
+
+export type InsertCertification = z.infer<typeof insertCertificationSchema>;
+export type Certification = typeof certifications.$inferSelect;
+
+// Goals schema
+export const goals = pgTable("goals", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  kpi: text("kpi").notNull(),
+  owner: text("owner").notNull(),
+  progress: integer("progress").notNull().default(0),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default('On Track'), // 'On Track', 'Completed', 'Behind', 'At Risk'
+  description: text("description"),
+  priority: text("priority").notNull().default('medium'), // 'high', 'medium', 'low'
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGoalSchema = createInsertSchema(goals).omit({ id: true, createdAt: true });
+export type Goal = typeof goals.$inferSelect;
+export type InsertGoal = z.infer<typeof insertGoalSchema>;

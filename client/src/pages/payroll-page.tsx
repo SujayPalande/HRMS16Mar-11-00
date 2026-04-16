@@ -2724,10 +2724,10 @@ export default function PayrollPage() {
                   <div className="flex flex-wrap gap-3 items-center">
                     <Select value={payrollUnitFilter} onValueChange={setPayrollUnitFilter}>
                       <SelectTrigger className="h-9 w-40 font-medium" data-testid="select-payroll-unit-filter">
-                        <SelectValue placeholder="All Units" />
+                        <SelectValue placeholder={units?.length === 1 ? units[0].name : "All Units"} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Units</SelectItem>
+                        {units?.length !== 1 && <SelectItem value="all">All Units</SelectItem>}
                         {units.map(u => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
                       </SelectContent>
                     </Select>

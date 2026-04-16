@@ -332,15 +332,17 @@ export function Header() {
                             <p className="text-xs text-slate-600 mt-1">
                               {notification.message}
                             </p>
-                            {notification.createdAt && (
-                              <p className="text-xs text-slate-400 mt-1">
-                                {formatInTimeZone(
-                                  new Date(notification.createdAt), 
-                                  'Asia/Kolkata', 
-                                  'MMM dd, yyyy hh:mm a'
-                                )} ({formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })})
-                              </p>
-                            )}
+                            {notification.createdAt && (() => {
+                              try {
+                                const d = new Date(notification.createdAt);
+                                if (isNaN(d.getTime())) return null;
+                                return (
+                                  <p className="text-xs text-slate-400 mt-1">
+                                    {formatInTimeZone(d, 'Asia/Kolkata', 'MMM dd, yyyy hh:mm a')} ({formatDistanceToNow(d, { addSuffix: true })})
+                                  </p>
+                                );
+                              } catch { return null; }
+                            })()}
                           </div>
                           <div className="flex items-center space-x-1 ml-2">
                             {!notification.isRead && (
@@ -571,7 +573,7 @@ export function Header() {
                     <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600 flex-shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs sm:text-sm font-medium text-slate-700">Date of Birth</p>
-                      <p className="text-sm sm:text-base text-slate-900">{format(new Date(user.dateOfBirth), "PPP")}</p>
+                      <p className="text-sm sm:text-base text-slate-900">{(() => { try { return format(new Date(user.dateOfBirth), "PPP"); } catch { return String(user.dateOfBirth); } })()}</p>
                     </div>
                   </div>
                 )}
@@ -581,7 +583,7 @@ export function Header() {
                     <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600 flex-shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs sm:text-sm font-medium text-slate-700">Date of Joining</p>
-                      <p className="text-sm sm:text-base text-slate-900">{format(new Date(user.joinDate), "PPP")}</p>
+                      <p className="text-sm sm:text-base text-slate-900">{(() => { try { return format(new Date(user.joinDate), "PPP"); } catch { return String(user.joinDate); } })()}</p>
                     </div>
                   </div>
                 )}
