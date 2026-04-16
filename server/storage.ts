@@ -146,6 +146,8 @@ export class MemStorage implements IStorage {
   private documentApprovals: Map<number, DocumentApproval>;
   private employeeDeductions: Map<number, EmployeeDeduction>;
   private goals: Map<number, Goal>;
+  private certifications: Map<number, Certification>;
+  private systemSettings: any;
 
   currentUnitId: number;
   currentUserId: number;
@@ -163,6 +165,7 @@ export class MemStorage implements IStorage {
   currentDocumentApprovalId: number;
   currentEmployeeDeductionId: number;
   currentGoalId: number;
+  currentCertificationId: number;
   sessionStore: session.Store;
 
   constructor() {
@@ -182,6 +185,8 @@ export class MemStorage implements IStorage {
     this.documentApprovals = new Map();
     this.employeeDeductions = new Map();
     this.goals = new Map();
+    this.certifications = new Map();
+    this.systemSettings = {};
 
     this.currentUnitId = 1;
     this.currentUserId = 1;
@@ -199,6 +204,7 @@ export class MemStorage implements IStorage {
     this.currentDocumentApprovalId = 1;
     this.currentEmployeeDeductionId = 1;
     this.currentGoalId = 1;
+    this.currentCertificationId = 1;
 
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000 // prune expired entries every 24h
